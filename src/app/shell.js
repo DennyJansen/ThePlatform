@@ -79,14 +79,24 @@ export function renderShell({ adapter, session, onRerender, onSignOut }) {
   const root = document.getElementById('app');
   clear(root);
 
+  // Spec §4 says "no tab bar", and this is still not one — but the
+  // marketplace added a second thing a freelancer comes here to do, so their
+  // navigation now has two groups rather than one list. Hours first: that is
+  // the obligation. Finding work is the errand.
   const links = [];
   if (session) {
     if (session.role === ROLE.FREELANCER) {
       links.push(navLink('/period', t('nav.current_period')));
       links.push(navLink('/history', t('nav.history')));
+      links.push(el('span', { class: 'nav__divider', 'aria-hidden': 'true' }));
+      links.push(navLink('/board', t('nav.board')));
+      links.push(navLink('/applications', t('nav.applications')));
+      links.push(navLink('/profile', t('nav.profile')));
     } else if (session.role === ROLE.APPROVER) {
       links.push(navLink('/inbox', t('nav.inbox')));
       links.push(navLink('/assignment', t('nav.assignment')));
+    } else if (session.role === ROLE.COMPANY_ADMIN) {
+      links.push(navLink('/company/projects', t('nav.company_projects')));
     }
   }
 

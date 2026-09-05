@@ -85,6 +85,24 @@ export const REQUIRED_METHODS = Object.freeze([
   'approvePeriod',
   'rejectPeriod',
   'listAuditEvents',
+
+  // Marketplace. Added after v1; see docs/architecture.md.
+  'listOpenProjects',
+  'getProject',
+  'listCompanyProjects',
+  'saveProject',
+  'transitionProject',
+  'getMyProfile',
+  'saveMyProfile',
+  'setOutreachConsent',
+  'applyToProject',
+  'listMyApplications',
+  'listApplicationsForProject',
+  'withdrawApplication',
+  'inviteToScreening',
+  'confirmScreeningSlot',
+  'rejectApplication',
+  'hireApplicant',
 ]);
 
 /**

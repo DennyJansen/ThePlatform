@@ -56,6 +56,7 @@ export const ERROR = Object.freeze({
   RATES_INCOHERENT: 'error.rates_incoherent',
   FORBIDDEN_FIELD: 'error.forbidden_field',
   ASSIGNMENT_ENDED: 'error.assignment_ended',
+  ASSIGNMENT_NOT_ACTIVE: 'error.assignment_not_active',
   NOT_FOUND: 'error.not_found',
   LINK_INVALID: 'error.link_invalid',
   LINK_EXPIRED: 'error.link_expired',

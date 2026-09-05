@@ -13,6 +13,8 @@ the adapter methods, flip one flag in `src/config.js`.
 1. Create a Supabase project in an EU region — the data is Dutch personal and
    financial data and there is no reason for it to leave the EU.
 2. Run `src/data/supabase/schema.sql` in the SQL editor, once, whole.
+   Then run `src/data/supabase/002-marketplace.sql`, which adds projects,
+   applications, profiles and the `project_board` view.
 
 The file creates the tables, the constraints that encode the spec's rules, the
 row-level security policies, and three security-definer functions —

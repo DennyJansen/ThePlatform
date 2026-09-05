@@ -17,6 +17,63 @@ export function statusBadge(status) {
 }
 
 /**
+ * The same badge for the marketplace's own status vocabularies.
+ * `prefix` is the i18n namespace: 'projectstatus' or 'appstatus'.
+ *
+ * Colour is carried by the status value, which is shared across vocabularies
+ * on purpose - a rejected application and a rejected timesheet should not look
+ * like different kinds of bad news.
+ */
+export function labelBadge(prefix, value) {
+  return el('span', {
+    class: 'badge badge--' + value,
+    'data-status': value,
+  }, t(prefix + '.' + value));
+}
+
+/** A labelled text/number/date field. Returns { field, input }. */
+export function textField(options) {
+  const input = el(options.multiline ? 'textarea' : 'input', {
+    id: options.id,
+    name: options.id,
+    class: 'input' + (options.multiline ? ' input--area' : ''),
+    type: options.multiline ? null : (options.type || 'text'),
+    rows: options.multiline ? String(options.rows || 4) : null,
+    value: options.multiline ? null : (options.value === null
+      || options.value === undefined ? '' : String(options.value)),
+    placeholder: options.placeholder || null,
+    inputmode: options.inputmode || null,
+    min: options.min || null,
+    max: options.max || null,
+    autocomplete: 'off',
+  });
+  if (options.multiline) input.value = options.value || '';
+
+  const field = el('div', { class: 'field' }, [
+    el('label', { class: 'label', for: options.id }, options.label),
+    input,
+    options.help ? el('p', { class: 'field__help' }, options.help) : null,
+  ]);
+  return { field, input };
+}
+
+/** A labelled <select>. Returns { field, input }. */
+export function selectField(options) {
+  const input = el('select', { id: options.id, name: options.id, class: 'input' },
+    options.options.map((o) => el('option', {
+      value: o.value,
+      selected: o.value === options.value ? true : null,
+    }, o.label)));
+
+  const field = el('div', { class: 'field' }, [
+    el('label', { class: 'label', for: options.id }, options.label),
+    input,
+    options.help ? el('p', { class: 'field__help' }, options.help) : null,
+  ]);
+  return { field, input };
+}
+
+/**
  * A block of prose above a screen. `tone` drives colour only; the text has to
  * carry the meaning on its own for anyone who cannot see the colour.
  */

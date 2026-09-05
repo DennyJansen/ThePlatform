@@ -85,6 +85,13 @@ export async function renderAssignmentDetail(container, { adapter, assignmentId 
       ]),
     ]),
 
+    // A hire on the marketplace creates a pending assignment. Saying so here
+    // is the difference between "the platform is slow" and "the platform is
+    // waiting on a signature".
+    assignment.status === 'pending'
+      ? notice('warn', t('c2.pending_title'), t('c2.pending_body'))
+      : null,
+
     definitionList([
       [t('period.freelancer'), assignment.freelancer ? assignment.freelancer.name : t('common.none')],
       [t('period.approver'), assignment.approver ? assignment.approver.name : t('common.none')],

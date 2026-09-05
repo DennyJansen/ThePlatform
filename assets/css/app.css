@@ -287,8 +287,10 @@ a { color: var(--accent); }
   font-size: 1.75rem;
   letter-spacing: -0.025em;
   margin: 0.15rem 0;
-  text-transform: capitalize;
 }
+/* Month names are lowercase in Dutch and want a capital here. Titles typed by
+   a person are left exactly as they typed them. */
+.period-head__title--month { text-transform: capitalize; }
 .period-head__meta { color: var(--text-muted); font-size: 0.92rem; }
 
 /* ---------------------------------------------------------------- Badges */
@@ -577,7 +579,9 @@ a { color: var(--accent); }
   color: var(--text);
 }
 .card__link:hover { background: var(--surface-2); }
-.card__title { font-weight: 650; text-transform: capitalize; }
+.card__title { font-weight: 650; }
+/* Month names only. Project titles are typed by a person and are left alone. */
+.card__title--month { text-transform: capitalize; }
 .card__meta { font-size: 0.88rem; color: var(--text-muted); }
 
 /* ------------------------------------------------------------ Empty state */
@@ -690,3 +694,196 @@ a { color: var(--accent); }
 h1[tabindex="-1"]:focus,
 h2[tabindex="-1"]:focus,
 [data-autofocus][tabindex="-1"]:focus { outline: none; }
+
+/* =====================================================================
+   Marketplace
+   ===================================================================== */
+
+.screen__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.screen__head .screen__title { margin-bottom: 0; }
+
+.crumb { font-size: 0.88rem; margin-bottom: 0.75rem; }
+.crumb a { text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+
+.lead {
+  color: var(--text-muted);
+  max-width: var(--measure);
+  margin-bottom: 1.5rem;
+}
+
+/* A visual break in the nav between the two things a freelancer comes for:
+   the hours they owe, and the work they are looking for. */
+.nav__divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.25rem 0.35rem;
+  background: var(--border);
+}
+
+/* ------------------------------------------------------------- Cards */
+
+.card__body { padding: 1rem 1.1rem 0.75rem; }
+.card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.15rem;
+}
+.card__head .card__title { font-size: 1.05rem; margin: 0; }
+.card__org {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+.card__counts {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+.card__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 0.75rem 1.1rem 1rem;
+  border-top: 1px solid var(--border);
+  margin-top: 0.75rem;
+}
+.card--project .card__link .card__head { margin-bottom: 0.1rem; }
+
+.pill {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.pill--new { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+/* ------------------------------------------------------------- Tags */
+
+.tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.6rem 0 0; }
+.tag {
+  font-size: 0.78rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------- Prose */
+
+.prose { margin-bottom: 1.5rem; max-width: var(--measure); }
+/* Descriptions and motivations are typed into a textarea by a person, so the
+   line breaks they put there are meaningful. pre-wrap preserves them without
+   going anywhere near innerHTML. */
+.prose__body { white-space: pre-wrap; }
+
+/* ------------------------------------------------------------- Forms */
+
+.field__help {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+  max-width: var(--measure);
+}
+.field .input { margin-bottom: 0; }
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1rem;
+}
+@media (max-width: 620px) {
+  .field-row { grid-template-columns: 1fr; }
+}
+
+.form--profile, .form--project {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.25rem 0.5rem;
+}
+
+.derived {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 0.35rem;
+}
+
+select.input {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2.25rem;
+}
+
+/* ------------------------------------------------------- Consent block */
+
+.consent {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  margin-top: 1.25rem;
+  max-width: var(--measure);
+}
+.consent__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.94rem;
+  cursor: pointer;
+}
+.consent__row input { margin-top: 0.25rem; width: 1.05rem; height: 1.05rem; }
+
+/* ------------------------------------------------------------- Slots */
+
+.slots { display: grid; gap: 0.5rem; }
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.slot:hover { background: var(--surface-2); }
+.slot input { width: 1.05rem; height: 1.05rem; }
+.slot-confirmed { font-weight: 650; margin-top: 0.5rem; }
+
+.applicant__more { margin-top: 0.75rem; }
+.applicant__more summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 0.35rem 0;
+}
+.applicant__more .prose__body { margin: 0.5rem 0 1rem; }

@@ -16,8 +16,31 @@
 import {
   ROLE,
   PERIOD_STATUS,
+  PROJECT_STATUS,
+  APPLICATION_STATUS,
   AUDIT_ACTION,
 } from '../../domain/model.js';
+import {
+  MARKET_ERROR,
+  assertCanApply,
+  assertCanManageProject,
+  assertApplicationTransition,
+  assertNotAlreadyApplied,
+  assertProfileComplete,
+  assertProfileVisibleTo,
+  assertProjectOpen,
+  assertProjectTransition,
+  assertRejectionReason,
+  assertSlotOffered,
+  buildAssignmentFromHire,
+  isCompanyAdminFor,
+  normaliseApplication,
+  normaliseProfile,
+  normaliseProject,
+  normaliseScreeningInvite,
+  profileIsComplete,
+  projectForFreelancer,
+} from '../../domain/marketplace.js';
 import {
   DomainError,
   ERROR,
@@ -350,6 +373,13 @@ export function createMockAdapter() {
           if (!assignment) throw new DomainError(ERROR.NOT_FOUND, 'No such assignment');
           assertAuthorised(user, assignment, 'view');
 
+          // A hire creates a PENDING assignment. Ops still has to set the
+          // final rates, name an approver and upload the signed agreement, so
+          // there is nothing legitimate to bill against yet.
+          if (assignment.status === 'pending') {
+            throw new DomainError(ERROR.ASSIGNMENT_NOT_ACTIVE, 'Assignment is not active yet');
+          }
+
           const versions = d.periods.filter((p) => p.assignment_id === assignmentId
             && p.year === year && p.month === month);
           let period = currentVersion(versions);
@@ -635,6 +665,465 @@ export function createMockAdapter() {
             actor_name: (findUser(db, e.actor_id) || {}).name || 'onbekend',
           }));
         return later(rows);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /* ---------------- Marketplace: projects ---------------- */
+
+    /**
+     * The board a freelancer browses. Only open projects, and every row goes
+     * through projectForFreelancer so the client budget cannot reach the
+     * client. That stripping happens here rather than in a template, because a
+     * template is one careless screen away from leaking it.
+     */
+    listOpenProjects() {
+      try {
+        const db = ensureSeeded();
+        const user = requireSession(db);
+        if (user.role !== ROLE.FREELANCER && user.role !== ROLE.OPS) {
+          throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Not a freelancer');
+        }
+        const mine = new Set(db.applications
+          .filter((a) => a.freelancer_id === user.id && a.status !== APPLICATION_STATUS.WITHDRAWN)
+          .map((a) => a.project_id));
+
+        const rows = db.projects
+          .filter((p) => p.status === PROJECT_STATUS.OPEN)
+          .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)))
+          .map((p) => ({
+            ...projectForFreelancer(p),
+            organization_name: (db.organizations.find((o) => o.id === p.organization_id) || {}).name,
+            has_applied: mine.has(p.id),
+          }));
+        return later(rows);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    getProject(projectId) {
+      try {
+        const db = ensureSeeded();
+        const user = requireSession(db);
+        const project = db.projects.find((p) => p.id === projectId);
+        if (!project) throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such project');
+
+        const org = db.organizations.find((o) => o.id === project.organization_id) || null;
+        const owns = isCompanyAdminFor(user, project.organization_id);
+
+        if (!owns && project.status !== PROJECT_STATUS.OPEN) {
+          throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such project');
+        }
+
+        const mine = db.applications.find((a) => a.project_id === projectId
+          && a.freelancer_id === user.id
+          && a.status !== APPLICATION_STATUS.WITHDRAWN) || null;
+
+        return later({
+          project: owns ? project : projectForFreelancer(project),
+          organization: org,
+          is_owner: owns,
+          my_application: mine,
+          application_count: owns
+            ? db.applications.filter((a) => a.project_id === projectId).length
+            : null,
+        });
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /** Every project belonging to the caller's organisation, any status. */
+    listCompanyProjects() {
+      try {
+        const db = ensureSeeded();
+        const user = requireSession(db);
+        if (user.role !== ROLE.COMPANY_ADMIN && user.role !== ROLE.OPS) {
+          throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Not a company account');
+        }
+        const rows = db.projects
+          .filter((p) => isCompanyAdminFor(user, p.organization_id))
+          .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+          .map((p) => {
+            const apps = db.applications.filter((a) => a.project_id === p.id);
+            return {
+              ...p,
+              application_count: apps.length,
+              new_count: apps.filter((a) => a.status === APPLICATION_STATUS.SUBMITTED).length,
+              screening_count: apps.filter((a) => a.status === APPLICATION_STATUS.SCREENING).length,
+            };
+          });
+        return later(rows);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    saveProject(projectId, input) {
+      try {
+        const id = transact((d) => {
+          const user = requireSession(d);
+          if (user.role !== ROLE.COMPANY_ADMIN && user.role !== ROLE.OPS) {
+            throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Not a company account');
+          }
+          const fields = normaliseProject(input);
+
+          if (projectId) {
+            const project = d.projects.find((p) => p.id === projectId);
+            assertCanManageProject(user, project);
+            Object.assign(project, fields);
+            appendAudit(d, user.id, null, 'Project', project.id,
+              AUDIT_ACTION.PROJECT_UPDATED, { title: project.title });
+            return project.id;
+          }
+
+          const project = {
+            id: newId('prj'),
+            organization_id: user.organization_id,
+            created_by: user.id,
+            status: PROJECT_STATUS.DRAFT,
+            created_at: new Date().toISOString(),
+            published_at: null,
+            ...fields,
+          };
+          d.projects.push(project);
+          appendAudit(d, user.id, null, 'Project', project.id,
+            AUDIT_ACTION.PROJECT_CREATED, { title: project.title });
+          return project.id;
+        });
+        return adapter.getProject(id);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /** publish | close | fill */
+    transitionProject(projectId, action) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          const project = d.projects.find((p) => p.id === projectId);
+          assertCanManageProject(user, project);
+          const next = assertProjectTransition(project, action);
+
+          project.status = next;
+          if (next === PROJECT_STATUS.OPEN && !project.published_at) {
+            project.published_at = new Date().toISOString();
+          }
+
+          const actionName = {
+            publish: AUDIT_ACTION.PROJECT_PUBLISHED,
+            close: AUDIT_ACTION.PROJECT_CLOSED,
+            fill: AUDIT_ACTION.PROJECT_FILLED,
+          }[action];
+          appendAudit(d, user.id, null, 'Project', project.id, actionName, { status: next });
+        });
+        return adapter.getProject(projectId);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /* ---------------- Marketplace: profile ---------------- */
+
+    getMyProfile() {
+      try {
+        const db = ensureSeeded();
+        const user = requireSession(db);
+        const profile = db.profiles.find((p) => p.user_id === user.id) || null;
+        return later({
+          profile,
+          complete: profileIsComplete(profile),
+          outreach_consent: !!(findUser(db, user.id) || {}).outreach_consent,
+        });
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    saveMyProfile(input) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          if (user.role !== ROLE.FREELANCER) {
+            throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Only freelancers have a profile');
+          }
+          const fields = normaliseProfile(input);
+          let profile = d.profiles.find((p) => p.user_id === user.id);
+          if (!profile) {
+            profile = { user_id: user.id, ...fields, updated_at: new Date().toISOString() };
+            d.profiles.push(profile);
+          } else {
+            Object.assign(profile, fields, { updated_at: new Date().toISOString() });
+          }
+          appendAudit(d, user.id, null, 'FreelancerProfile', user.id,
+            AUDIT_ACTION.PROFILE_UPDATED, {});
+        });
+        return adapter.getMyProfile();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /**
+     * COMPLIANCE §6. The freelancer's own switch: without it a company can
+     * read their profile only through an application they chose to send.
+     */
+    setOutreachConsent(consent) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          const row = findUser(d, user.id);
+          row.outreach_consent = !!consent;
+          appendAudit(d, user.id, null, 'User', user.id,
+            AUDIT_ACTION.PROFILE_UPDATED, { outreach_consent: !!consent });
+        });
+        return adapter.getMyProfile();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /* ---------------- Marketplace: applications ---------------- */
+
+    applyToProject(projectId, input) {
+      try {
+        const id = transact((d) => {
+          const user = requireSession(d);
+          assertCanApply(user);
+
+          const project = d.projects.find((p) => p.id === projectId);
+          assertProjectOpen(project);
+          assertNotAlreadyApplied(d.applications, projectId, user.id);
+
+          const profile = d.profiles.find((p) => p.user_id === user.id);
+          assertProfileComplete(profile);
+
+          const fields = normaliseApplication(input);
+          const application = {
+            id: newId('app'),
+            project_id: projectId,
+            freelancer_id: user.id,
+            organization_id: project.organization_id,
+            status: APPLICATION_STATUS.SUBMITTED,
+            created_at: new Date().toISOString(),
+            decided_at: null,
+            decision_reason: null,
+            hiring_manager_name: null,
+            screening_note: null,
+            screening_slots: [],
+            screening_confirmed_slot: null,
+            ...fields,
+          };
+          d.applications.push(application);
+          appendAudit(d, user.id, null, 'Application', application.id,
+            AUDIT_ACTION.APPLICATION_SUBMITTED, { project_id: projectId });
+          return application.id;
+        });
+        return later({ id });
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /** The freelancer's own applications, with the project they were for. */
+    listMyApplications() {
+      try {
+        const db = ensureSeeded();
+        const user = requireSession(db);
+        const rows = db.applications
+          .filter((a) => a.freelancer_id === user.id)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
+          .map((a) => {
+            const project = db.projects.find((p) => p.id === a.project_id);
+            return {
+              ...a,
+              project: project ? projectForFreelancer(project) : null,
+              organization_name: (db.organizations
+                .find((o) => o.id === a.organization_id) || {}).name,
+            };
+          });
+        return later(rows);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /**
+     * The applicants for one project, each with the profile that came with the
+     * application. assertProfileVisibleTo is called per row rather than
+     * assumed: it is the rule that keeps a structured profile from becoming a
+     * candidate database, and it should be exercised on the path that reads
+     * profiles, not just documented.
+     */
+    listApplicationsForProject(projectId) {
+      try {
+        const db = ensureSeeded();
+        const user = requireSession(db);
+        const project = db.projects.find((p) => p.id === projectId);
+        assertCanManageProject(user, project);
+
+        const applications = db.applications.filter((a) => a.organization_id
+          === project.organization_id);
+
+        const rows = db.applications
+          .filter((a) => a.project_id === projectId)
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .map((a) => {
+            const owner = findUser(db, a.freelancer_id);
+            assertProfileVisibleTo(user, owner, applications);
+            return {
+              ...a,
+              freelancer: { id: owner.id, name: owner.name, email: owner.email },
+              profile: db.profiles.find((p) => p.user_id === a.freelancer_id) || null,
+            };
+          });
+
+        return later({ project, applications: rows });
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    withdrawApplication(applicationId) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          const application = d.applications.find((a) => a.id === applicationId);
+          if (!application) throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such application');
+          if (application.freelancer_id !== user.id) {
+            throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Not your application');
+          }
+          application.status = assertApplicationTransition(application, 'withdraw', 'freelancer');
+          application.decided_at = new Date().toISOString();
+          appendAudit(d, user.id, null, 'Application', application.id,
+            AUDIT_ACTION.APPLICATION_WITHDRAWN, {});
+        });
+        return adapter.listMyApplications();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /** Company invites the applicant to a screening call. */
+    inviteToScreening(applicationId, input) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          const application = d.applications.find((a) => a.id === applicationId);
+          if (!application) throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such application');
+          const project = d.projects.find((p) => p.id === application.project_id);
+          assertCanManageProject(user, project);
+
+          const fields = normaliseScreeningInvite(input);
+          application.status = assertApplicationTransition(application, 'invite', 'company');
+          Object.assign(application, fields);
+
+          appendAudit(d, user.id, null, 'Application', application.id,
+            AUDIT_ACTION.APPLICATION_INVITED, {
+              hiring_manager: fields.hiring_manager_name,
+              slots: fields.screening_slots.length,
+            });
+        });
+        return adapter.listApplicationsForProject(
+          load().applications.find((a) => a.id === applicationId).project_id,
+        );
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /** Freelancer picks one of the offered times. */
+    confirmScreeningSlot(applicationId, slot) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          const application = d.applications.find((a) => a.id === applicationId);
+          if (!application) throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such application');
+          if (application.freelancer_id !== user.id) {
+            throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Not your application');
+          }
+          if (application.status !== APPLICATION_STATUS.SCREENING) {
+            throw new DomainError(MARKET_ERROR.ILLEGAL_TRANSITION, 'No invitation to confirm');
+          }
+          application.screening_confirmed_slot = assertSlotOffered(application, slot);
+          appendAudit(d, user.id, null, 'Application', application.id,
+            AUDIT_ACTION.APPLICATION_SCREENING_CONFIRMED, { slot });
+        });
+        return adapter.listMyApplications();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    rejectApplication(applicationId, reason) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          const application = d.applications.find((a) => a.id === applicationId);
+          if (!application) throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such application');
+          const project = d.projects.find((p) => p.id === application.project_id);
+          assertCanManageProject(user, project);
+
+          const text = assertRejectionReason(reason);
+          application.status = assertApplicationTransition(application, 'reject', 'company');
+          application.decided_at = new Date().toISOString();
+          application.decision_reason = text;
+
+          appendAudit(d, user.id, null, 'Application', application.id,
+            AUDIT_ACTION.APPLICATION_REJECTED, { reason: text });
+        });
+        return adapter.listApplicationsForProject(
+          load().applications.find((a) => a.id === applicationId).project_id,
+        );
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /**
+     * Hire. Produces a PENDING assignment and marks the project filled.
+     *
+     * Pending, not active: a screening call is an agreement in principle, and
+     * spec §8 lists nine contract clauses the rest of the system assumes
+     * exist. Ops sets the final rates, names the approver and uploads the
+     * signed agreement before anything can be billed against it.
+     */
+    hireApplicant(applicationId) {
+      try {
+        const result = transact((d) => {
+          const user = requireSession(d);
+          const application = d.applications.find((a) => a.id === applicationId);
+          if (!application) throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such application');
+          const project = d.projects.find((p) => p.id === application.project_id);
+          assertCanManageProject(user, project);
+
+          application.status = assertApplicationTransition(application, 'hire', 'company');
+          application.decided_at = new Date().toISOString();
+
+          const assignment = buildAssignmentFromHire(project, application, newId('asg'));
+          d.assignments.push(assignment);
+
+          if (project.status === PROJECT_STATUS.OPEN) {
+            project.status = PROJECT_STATUS.FILLED;
+            appendAudit(d, user.id, null, 'Project', project.id,
+              AUDIT_ACTION.PROJECT_FILLED, {});
+          }
+
+          appendAudit(d, user.id, null, 'Application', application.id,
+            AUDIT_ACTION.APPLICATION_HIRED, { assignment_id: assignment.id });
+          appendAudit(d, user.id, assignment.id, 'Assignment', assignment.id,
+            AUDIT_ACTION.ASSIGNMENT_CREATED_FROM_HIRE, {
+              project_id: project.id,
+              application_id: application.id,
+              status: 'pending',
+            });
+
+          return { project_id: project.id, assignment_id: assignment.id };
+        });
+        return later(result);
       } catch (err) {
         return Promise.reject(err);
       }

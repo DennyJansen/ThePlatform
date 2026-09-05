@@ -13,8 +13,11 @@
  */
 
 const STORAGE_KEY = 'platform.v1.db';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
+// Bumped to 2 when the marketplace added projects, applications and profiles.
+// A stored v1 document is discarded rather than migrated: it is demo data, and
+// reseeding is both simpler and more honest than a migration nobody will test.
 /** Tables that may be written by the adapter. */
 const TABLES = [
   'organizations',
@@ -24,6 +27,9 @@ const TABLES = [
   'entries',
   'charges',
   'invoices',
+  'projects',
+  'applications',
+  'profiles',
   'magic_links',
   'audit_events',
   'session',
@@ -42,6 +48,9 @@ function emptyDb() {
     entries: [],
     charges: [],
     invoices: [],
+    projects: [],
+    applications: [],
+    profiles: [],
     magic_links: [],
     audit_events: [],
     session: null,

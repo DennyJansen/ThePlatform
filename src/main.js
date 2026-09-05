@@ -20,15 +20,27 @@ import { renderFreelancerPeriod } from './ui/screens/freelancerPeriod.js';
 import { renderHistory } from './ui/screens/history.js';
 import { renderInbox, renderReview } from './ui/screens/approverReview.js';
 import { renderAssignmentDetail } from './ui/screens/assignmentDetail.js';
+import { renderBoard, renderProject } from './ui/screens/board.js';
+import { renderApplications } from './ui/screens/applications.js';
+import { renderProfile } from './ui/screens/profile.js';
+import { renderCompanyProjects, renderProjectForm } from './ui/screens/companyProjects.js';
+import { renderApplicants } from './ui/screens/applicants.js';
 
 let adapter = null;
 let session = null;
 
-/** Where a signed-in user belongs when they arrive at the root. */
+/**
+ * Where a signed-in user belongs when they arrive at the root.
+ *
+ * A freelancer still lands on their current period rather than the project
+ * board: someone with a live placement opens this app to enter hours, and the
+ * marketplace is what they go looking for, not what they are interrupted by.
+ */
 function homeFor(user) {
   if (!user) return '/signin';
   if (user.role === ROLE.FREELANCER) return '/period';
   if (user.role === ROLE.APPROVER) return '/inbox';
+  if (user.role === ROLE.COMPANY_ADMIN) return '/company/projects';
   return '/assignment';
 }
 
@@ -126,6 +138,34 @@ function registerRoutes() {
   route('/review/:id', guarded((main, { params }) => renderReview(main, {
     adapter, periodId: params.id,
   }), [ROLE.APPROVER, ROLE.OPS]));
+
+  /* ---------------- Marketplace ---------------- */
+
+  route('/board', guarded((main) => renderBoard(main, { adapter }),
+    [ROLE.FREELANCER, ROLE.OPS]));
+
+  route('/project/:id', guarded((main, { params }) => renderProject(main, {
+    adapter, projectId: params.id,
+  }), [ROLE.FREELANCER, ROLE.OPS]));
+
+  route('/applications', guarded((main) => renderApplications(main, { adapter }),
+    [ROLE.FREELANCER, ROLE.OPS]));
+
+  route('/profile', guarded((main) => renderProfile(main, { adapter }),
+    [ROLE.FREELANCER, ROLE.OPS]));
+
+  route('/company/projects', guarded((main) => renderCompanyProjects(main, { adapter }),
+    [ROLE.COMPANY_ADMIN, ROLE.OPS]));
+
+  // '/company/project/new' resolves here too: the form treats the id 'new' as
+  // "no project yet", so creating and editing are one screen and one route.
+  route('/company/project/:id', guarded((main, { params }) => renderProjectForm(main, {
+    adapter, projectId: params.id,
+  }), [ROLE.COMPANY_ADMIN, ROLE.OPS]));
+
+  route('/company/project/:id/applicants', guarded((main, { params }) => renderApplicants(main, {
+    adapter, projectId: params.id,
+  }), [ROLE.COMPANY_ADMIN, ROLE.OPS]));
 
   route('/assignment', guarded((main) => renderAssignmentDetail(main, { adapter })));
 

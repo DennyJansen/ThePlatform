@@ -11,7 +11,10 @@
  * client 100.00, freelancer 95.00, deduction 2.00, platform take 7.00.
  */
 
-import { ROLE, PERIOD_STATUS, AUDIT_ACTION } from '../../domain/model.js';
+import {
+  ROLE, PERIOD_STATUS, PROJECT_STATUS, APPLICATION_STATUS, AUDIT_ACTION,
+} from '../../domain/model.js';
+import { deriveFreelancerRate } from '../../domain/money.js';
 import { currentPeriod, isoDate, monthDays, periodKey } from '../../domain/dates.js';
 import { newId } from './store.js';
 
@@ -74,6 +77,38 @@ export function buildSeed(now = new Date()) {
     name: 'Platform Ops',
     role: ROLE.OPS,
     organization_id: null,
+    outreach_consent: false,
+    created_at: nowIso,
+  };
+
+  // A second client, so the board is not one company talking to itself and so
+  // the isolation rules have something real to isolate.
+  const org2 = {
+    id: 'org_client2',
+    name: 'Waterlijn Infra B.V.',
+    kvk_number: '69112430',
+    vat_number: 'NL812655409B01',
+    billing_email: 'facturen@waterlijninfra.nl',
+    payment_terms_days: 45,
+    created_at: nowIso,
+  };
+
+  const companyAdmin = {
+    id: 'usr_company',
+    email: 'company@example.com',
+    name: 'Marieke Vos',
+    role: ROLE.COMPANY_ADMIN,
+    organization_id: org.id,
+    outreach_consent: false,
+    created_at: nowIso,
+  };
+
+  const companyAdmin2 = {
+    id: 'usr_company2',
+    email: 'company2@example.com',
+    name: 'Ravi Menon',
+    role: ROLE.COMPANY_ADMIN,
+    organization_id: org2.id,
     outreach_consent: false,
     created_at: nowIso,
   };
@@ -255,15 +290,164 @@ export function buildSeed(now = new Date()) {
     || a.version - b.version);
   audit.sort((a, b) => a.created_at.localeCompare(b.created_at));
 
+  /* ---------------- Marketplace ---------------- */
+
+  // The company enters a budget; the freelancer rate is derived, never typed.
+  // Seeding it any other way would let the two drift apart on day one.
+  const project = (id, orgRow, author, fields) => ({
+    id,
+    organization_id: orgRow.id,
+    created_by: author.id,
+    status: PROJECT_STATUS.OPEN,
+    created_at: nowIso,
+    published_at: nowIso,
+    freelancer_rate_per_hour: deriveFreelancerRate(fields.client_rate_per_hour),
+    ...fields,
+  });
+
+  const startNextMonth = isoDate(
+    monthsBack(current, -1).year,
+    monthsBack(current, -1).month,
+    1,
+  );
+
+  const projects = [
+    project('prj_001', org, companyAdmin, {
+      title: 'Werkvoorbereider utiliteitsbouw',
+      description: 'Voor een renovatieproject in Utrecht zoeken wij een ervaren '
+        + 'werkvoorbereider. Je stelt werkpakketten samen, bewaakt de inkoop van '
+        + 'materialen en stemt af met de uitvoering op locatie. Je bepaalt zelf hoe '
+        + 'je het werk inricht; wij leveren de projectdocumentatie en de contacten '
+        + 'bij de onderaannemers.',
+      client_rate_per_hour: 10000,
+      indicative_hours_per_week: 32,
+      start_date: startNextMonth,
+      duration_months: 6,
+      location: 'Utrecht',
+      remote_policy: 'hybrid',
+    }),
+    project('prj_002', org, companyAdmin, {
+      title: 'Calculator installatietechniek',
+      description: 'Wij zoeken een calculator die zelfstandig offertetrajecten voor '
+        + 'installatiewerk kan doorrekenen. Ervaring met W- en E-installaties in de '
+        + 'utiliteit is belangrijker dan ervaring met onze software. Je werkt vanuit '
+        + 'je eigen locatie en sluit een dagdeel per week aan bij het calculatieoverleg.',
+      client_rate_per_hour: 9500,
+      indicative_hours_per_week: 24,
+      start_date: startNextMonth,
+      duration_months: 4,
+      location: 'Amersfoort',
+      remote_policy: 'remote',
+    }),
+    project('prj_003', org2, companyAdmin2, {
+      title: 'Projectleider kabels en leidingen',
+      description: 'Voor het vervangen van een tracé in Zuid-Holland zoeken wij een '
+        + 'projectleider met ervaring in de ondergrondse infra. Je stuurt op planning '
+        + 'en budget richting de opdrachtgever en houdt contact met netbeheerders. '
+        + 'Kennis van de CROW-richtlijnen is een voorwaarde.',
+      client_rate_per_hour: 11500,
+      indicative_hours_per_week: 36,
+      start_date: startNextMonth,
+      duration_months: 12,
+      location: 'Rotterdam',
+      remote_policy: 'on_site',
+    }),
+    {
+      ...project('prj_004', org2, companyAdmin2, {
+        title: 'BIM-modelleur (concept)',
+        description: 'Concepttekst. Nog niet gepubliceerd — bedoeld om te laten zien '
+          + 'hoe een opdracht eruitziet voordat een bedrijf hem openzet voor reacties.',
+        client_rate_per_hour: 8500,
+        indicative_hours_per_week: 40,
+        start_date: startNextMonth,
+        duration_months: 3,
+        location: 'Delft',
+        remote_policy: 'hybrid',
+      }),
+      status: PROJECT_STATUS.DRAFT,
+      published_at: null,
+    },
+  ];
+
+  // Sanne has a profile, because a freelancer cannot apply without one.
+  const profiles = [{
+    user_id: freelancer.id,
+    headline: 'Werkvoorbereider en calculator, utiliteitsbouw',
+    bio: 'Twaalf jaar in de utiliteitsbouw, de laatste zes als zelfstandige. Ik werk '
+      + 'het liefst aan renovatie- en transformatieprojecten waar de tekening en de '
+      + 'werkelijkheid niet op elkaar aansluiten. Ik lever werkpakketten op die de '
+      + 'uitvoering zonder navraag kan gebruiken.',
+    skills: ['Werkvoorbereiding', 'Calculatie', 'Utiliteitsbouw', 'Renovatie', 'Bouwbesluit'],
+    languages: ['Nederlands', 'Engels'],
+    years_experience: 12,
+    rate_expectation_per_hour: 9500,
+    available_from: startNextMonth,
+    location: 'Amersfoort',
+    cv_file: null,
+    website_url: null,
+    updated_at: nowIso,
+  }];
+
+  // One application already at the screening stage, so the flow is visible on
+  // first load rather than only after someone drives it.
+  const applications = [{
+    id: 'app_001',
+    project_id: 'prj_003',
+    freelancer_id: freelancer.id,
+    organization_id: org2.id,
+    status: APPLICATION_STATUS.SCREENING,
+    motivation: 'Ik heb twee vergelijkbare tracés begeleid, waarvan één met dezelfde '
+      + 'netbeheerder. Ik ben per de startdatum beschikbaar voor drie dagen per week.',
+    proposed_rate_per_hour: 11000,
+    created_at: nowIso,
+    decided_at: null,
+    decision_reason: null,
+    hiring_manager_name: 'Ravi Menon',
+    screening_note: 'Kennismaking van een half uur, videobellen. Link volgt per mail.',
+    screening_slots: [],
+    screening_confirmed_slot: null,
+  }];
+
+  // Offer three slots on the next three weekdays, so the demo always has
+  // future times to pick from.
+  {
+    const base = new Date(now.getTime());
+    const slots = [];
+    let added = 0;
+    while (slots.length < 3 && added < 10) {
+      base.setUTCDate(base.getUTCDate() + 1);
+      added += 1;
+      const wd = base.getUTCDay();
+      if (wd === 0 || wd === 6) continue;
+      const day = base.toISOString().slice(0, 10);
+      slots.push(day + 'T' + ['10:00', '14:00', '11:30'][slots.length]);
+    }
+    applications[0].screening_slots = slots;
+  }
+
+  audit.push({
+    id: newId('aud'),
+    actor_id: freelancer.id,
+    assignment_id: null,
+    object_type: 'Application',
+    object_id: applications[0].id,
+    action: AUDIT_ACTION.APPLICATION_SUBMITTED,
+    payload_json: { project_id: 'prj_003' },
+    created_at: nowIso,
+  });
+
   return {
-    schema_version: 1,
-    organizations: [org],
-    users: [freelancer, approver, ops],
+    schema_version: 2,
+    organizations: [org, org2],
+    users: [freelancer, approver, ops, companyAdmin, companyAdmin2],
     assignments: [assignment],
     periods,
     entries,
     charges: [],
     invoices: [],
+    projects,
+    applications,
+    profiles,
     magic_links: [],
     audit_events: audit,
     session: null,
@@ -274,4 +458,5 @@ export function buildSeed(now = new Date()) {
 export const DEMO_ACCOUNTS = Object.freeze([
   { email: 'freelancer@example.com', role: ROLE.FREELANCER, name: 'Sanne de Vries' },
   { email: 'approver@example.com', role: ROLE.APPROVER, name: 'Joost Bakker' },
+  { email: 'company@example.com', role: ROLE.COMPANY_ADMIN, name: 'Marieke Vos' },
 ]);

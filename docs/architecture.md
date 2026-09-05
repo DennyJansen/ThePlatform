@@ -100,6 +100,43 @@ transition returns the new view rather than patching the old one. The only
 client-side state that outlives a render is the locale choice and the
 unsaved-changes guard on F2.
 
+## The marketplace, and the one number it must not leak
+
+The marketplace was added after v1, reversing spec §1's exclusion of matching
+and profiles. Architecturally it changed three things.
+
+**A fourth role.** `company_admin`, scoped to one organisation, posts and
+manages that organisation's projects and decides on applications. It is
+deliberately not the same role as `approver`: §2 gives the approver one narrow
+power — approving hours on one named assignment — and the compliance story
+leans on that narrowness. One person may hold both.
+
+**A rate split.** A company enters its budget. The freelancer rate is
+*derived* (`deriveFreelancerRate`) and stored alongside it, never typed. The
+board shows only the derived figure. Crucially, the stripping happens in the
+data layer — `projectForFreelancer()` in the mock, and a `project_board` view
+with no budget column in Postgres — not in a template. A new screen cannot leak
+the spread by forgetting to omit a field, because the field is not there.
+
+The €2/hour freelancer-side deduction *is* disclosed on the project page. It
+is already visible in the submit confirmation once someone is placed, and
+finding out about it at that point rather than before applying is the kind of
+surprise that loses a freelancer.
+
+**A second state machine.** Applications run
+`submitted → screening → hired`, with `reject` available to the company at
+both steps and `withdraw` to the freelancer. Transitions are actor-owned:
+`APPLICATION_ACTOR` says which side may fire each one, so a freelancer cannot
+hire themselves and a company cannot withdraw someone's application. Hiring
+straight from `submitted` is refused — the screening call is a required step,
+not a convention.
+
+A hire produces a **pending** assignment, not an active one. Two people have
+had a video call; §8's nine contract clauses do not exist yet. Ops sets the
+final rates, names an approver and uploads the agreement. Until then no period
+opens, and the `active_needs_approver` constraint refuses to let it go live
+half-configured.
+
 ## What changes under Supabase
 
 | Concern | Mock | Supabase |
@@ -110,5 +147,9 @@ unsaved-changes guard on F2.
 | submit / approve / reject | adapter method | `rpc()` into a security-definer function |
 | Audit | array append + invariant check | insert-only table, no update/delete rule |
 | Ops console | none (audit shown on C2) | the project's table editor |
+| Project board | a JS filter + `projectForFreelancer` | the `project_board` view, which has no budget column |
+| Profile visibility | `assertProfileVisibleTo` | the `read_profiles` policy |
+| Application transitions | adapter method | `rpc()` into a security-definer function |
+| Scope never on an assignment | omitted by `buildAssignmentFromHire` | `trg_assignment_no_scope` |
 
 The screens do not change. That is the point of the port.

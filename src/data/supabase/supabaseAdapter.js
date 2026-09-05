@@ -83,6 +83,45 @@ export async function createSupabaseAdapter(settings) {
 
     listAuditEvents: pending('listAuditEvents'),
 
+    /**
+     * Marketplace. Schema in ./002-marketplace.sql.
+     *
+     * Two of these are not ordinary selects and should be written first:
+     *
+     *   listOpenProjects  -> select from `project_board`, NOT from `projects`.
+     *                        The view has no budget column, and freelancers
+     *                        have no select policy on the table at all. If you
+     *                        find yourself selecting from `projects` here, the
+     *                        spread is about to leak.
+     *   listApplicationsForProject -> the join to freelancer_profiles is
+     *                        governed by the read_profiles policy, so a
+     *                        profile simply does not come back unless the
+     *                        freelancer applied or opted in. Do not paper over
+     *                        a null profile; it is the rule working.
+     *
+     * invite/confirm/reject/withdraw/hire are rpc() calls into the
+     * security-definer functions. Nothing else may change an application's
+     * status.
+     */
+    listOpenProjects: pending('listOpenProjects'),
+    getProject: pending('getProject'),
+    listCompanyProjects: pending('listCompanyProjects'),
+    saveProject: pending('saveProject'),
+    transitionProject: pending('transitionProject'),
+
+    getMyProfile: pending('getMyProfile'),
+    saveMyProfile: pending('saveMyProfile'),
+    setOutreachConsent: pending('setOutreachConsent'),
+
+    applyToProject: pending('applyToProject'),
+    listMyApplications: pending('listMyApplications'),
+    listApplicationsForProject: pending('listApplicationsForProject'),
+    withdrawApplication: pending('withdrawApplication'),
+    inviteToScreening: pending('inviteToScreening'),
+    confirmScreeningSlot: pending('confirmScreeningSlot'),
+    rejectApplication: pending('rejectApplication'),
+    hireApplicant: pending('hireApplicant'),
+
     /** No demo data to reset against a real database. */
     resetDemoData: () => Promise.resolve(),
   };

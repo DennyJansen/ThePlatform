@@ -23,6 +23,48 @@ export const DEFAULT_HOUR_INCREMENT = 0.25;
 export const MAX_HOURS_PER_DAY = 24;
 
 /**
+ * The client-side spread, in cents per hour. Spec §3's worked example: a €100
+ * client budget carries a €95 freelancer rate, so the spread is €5.
+ *
+ * This is the number a marketplace listing must never reveal. A company enters
+ * its budget; the board shows the freelancer what they would earn. Both are
+ * stored, only one is shown to each side.
+ */
+export const DEFAULT_CLIENT_SIDE_SPREAD = 500;
+
+/** Sanity bounds on a posted budget, in cents per hour. */
+export const MIN_CLIENT_RATE = 2000;
+export const MAX_CLIENT_RATE = 50000;
+
+/**
+ * What the freelancer would contract at, derived from the client's budget.
+ *
+ * Never store only one of the two. The listing shows this figure; the
+ * assignment that a hire eventually produces needs both, and recomputing the
+ * spread later from a rate someone has since edited is how the margin
+ * silently changes.
+ */
+export function deriveFreelancerRate(clientRateCents, spread = DEFAULT_CLIENT_SIDE_SPREAD) {
+  if (!Number.isInteger(clientRateCents) || clientRateCents < 0) return 0;
+  return Math.max(0, clientRateCents - spread);
+}
+
+/**
+ * Parse a rate typed as euros into cents. Accepts "95", "95,50", "95.50".
+ * Returns null for blank, NaN for anything that is not a rate.
+ */
+export function parseRateToCents(input) {
+  if (typeof input === 'number') {
+    return Number.isFinite(input) ? roundHalfUp(input * 100) : NaN;
+  }
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim().replace(/^€\s*/, '');
+  if (trimmed === '') return null;
+  if (!/^\d{1,6}([.,]\d{1,2})?$/.test(trimmed)) return NaN;
+  return roundHalfUp(Number(trimmed.replace(',', '.')) * 100);
+}
+
+/**
  * Round half-up to the nearest integer. JavaScript's Math.round already rounds
  * .5 up for positives, but it rounds -0.5 to -0 rather than -1, so negatives
  * are handled explicitly. Credit notes will need this.

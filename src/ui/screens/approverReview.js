@@ -82,7 +82,7 @@ export async function renderInbox(container, { adapter }) {
         class: 'card__link',
         href: '#/review/' + encodeURIComponent(view.period.id),
       }, [
-        el('span', { class: 'card__title' },
+        el('span', { class: 'card__title card__title--month' },
           formatMonth(view.period.year, view.period.month, locale)),
         el('span', { class: 'card__meta' }, [
           view.freelancer ? view.freelancer.name : '',
@@ -198,7 +198,7 @@ export async function renderReview(container, { adapter, periodId }) {
         el('div', { class: 'period-head__main' }, [
           el('p', { class: 'period-head__client' },
             current.freelancer ? current.freelancer.name : ''),
-          el('h1', { class: 'period-head__title' },
+          el('h1', { class: 'period-head__title period-head__title--month' },
             formatMonth(current.period.year, current.period.month, locale)),
           el('p', { class: 'period-head__meta' }, [
             current.assignment.title,

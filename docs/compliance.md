@@ -43,10 +43,76 @@ or the data model.
 | Tests | `src/test/tests.js` → "Compliance — spec section 6, the absences" |
 | Database | `time_entries` in `src/data/supabase/schema.sql` has four columns |
 | Consent field | `app_users.outreach_consent`, default `false` |
+| Profile visibility | `assertProfileVisibleTo()`, and `read_profiles` in `002-marketplace.sql` |
+| Scope never reaching an assignment | `buildAssignmentFromHire()`, and `trg_assignment_no_scope` |
 
 The test iterates the forbidden list and asserts each one is refused, so
 extending the list extends the test automatically. Adding a column to
 `time_entries` fails the suite before it reaches review.
+
+## The marketplace, and what it changed
+
+Spec §1 excluded matching, search and freelancer profiles. That was reversed
+deliberately. Two obligations came back with it, and both are enforced in code
+rather than trusted to reviewers.
+
+### Structured profiles are not a candidate database
+
+§6: *"Direct outreach based on profile data requires opt-in captured at
+signup."* So:
+
+- There is **no company-facing profile search anywhere in this build.**
+- A company can read a freelancer's profile only through an application that
+  freelancer chose to send them.
+- The one exception is `outreach_consent`, which is **off by default** and is
+  the freelancer's to turn on. The profile screen says exactly what it does.
+
+| Enforced by | Where |
+|---|---|
+| The visibility rule | `assertProfileVisibleTo()` in `src/domain/marketplace.js` |
+| Called on the read path | `listApplicationsForProject()`, per row |
+| Database | `read_profiles` policy in `002-marketplace.sql` |
+| Tests | "Compliance §6 — profiles do not become a candidate database" |
+
+If a profile search is ever built, `assertProfileVisibleTo` is where it must
+be filtered, and the policy above is what will refuse it if the code forgets.
+
+### Indicative scope on a posting
+
+A project posting carries `indicative_hours_per_week`. This is the one place
+this codebase records a number of hours that nobody worked, so it is worth
+being precise about why it is allowed.
+
+On a **pitch** it is commercial scoping: ordinary in Dutch freelance
+contracting, and nobody can decide whether to apply without knowing whether an
+engagement is one day a week or four. On a **live assignment** the same number
+would be an expected-hours field, which §6 forbids.
+
+So it is fenced three ways:
+
+1. It is **never copied onto an Assignment.** `buildAssignmentFromHire()` omits
+   it, and a test asserts the absence on the object the hire path produces.
+2. **Nothing validates submitted hours against it.** A freelancer who bills 12
+   hours in a week scoped at 32 gets no warning, because it is not a target.
+3. The database **refuses** an assignment carrying it, via
+   `trg_assignment_no_scope`, which checks the row as JSON rather than named
+   columns — so it keeps working if someone adds the column without reading
+   this file.
+
+It is labelled "indicative scope" in both languages, with a line under it
+saying it is not a roster and the freelancer decides how they arrange their
+hours.
+
+### Postings must not read like job adverts
+
+The description field's help text asks for **the work and the outcome, not the
+working hours**. This is the most likely route by which gezag gets
+reintroduced: a company writing "you will work Monday to Thursday, 9 to 5,
+reporting to the site manager" has described employment, whatever the contract
+says.
+
+There is no moderation in this build. If postings start reading that way, that
+is a product problem and a real one — not a copy problem.
 
 ## Things that look like features and are not
 

@@ -19,6 +19,13 @@ import { notice } from '../components/ui.js';
 import { DEMO_ACCOUNTS } from '../../data/mock/seed.js';
 import { navigate } from '../../app/router.js';
 
+/** One demo button per role, labelled by what that role actually does. */
+const DEMO_LABEL = {
+  freelancer: 'signin.demo_freelancer',
+  approver: 'signin.demo_approver',
+  company_admin: 'signin.demo_company',
+};
+
 export function renderSignIn(container, { adapter, onSignedIn }) {
   clear(container);
 
@@ -128,9 +135,7 @@ export function renderSignIn(container, { adapter, onSignedIn }) {
             type: 'button',
             class: 'btn btn--ghost',
             onclick: () => requestLink(account.email),
-          }, account.role === 'freelancer'
-            ? t('signin.demo_freelancer')
-            : t('signin.demo_approver')))),
+          }, t(DEMO_LABEL[account.role] || 'signin.demo_freelancer')))),
         ])
         : null,
     ]);

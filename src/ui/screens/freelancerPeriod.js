@@ -60,7 +60,7 @@ function periodHeader(view) {
   return el('div', { class: 'period-head' }, [
     el('div', { class: 'period-head__main' }, [
       el('p', { class: 'period-head__client' }, organization ? organization.name : ''),
-      el('h1', { class: 'period-head__title' }, [
+      el('h1', { class: 'period-head__title period-head__title--month' }, [
         formatMonth(period.year, period.month, locale),
       ]),
       el('p', { class: 'period-head__meta' }, [
@@ -90,7 +90,11 @@ export async function renderFreelancerPeriod(container, { adapter, session, peri
     if (periodId) {
       view = await adapter.getPeriod(periodId);
     } else {
-      const assignments = await adapter.listAssignments();
+      // Only an active assignment opens a period. A hire on the marketplace
+      // creates a pending one, and ops has to settle the rates and the
+      // agreement before anything can be billed against it.
+      const assignments = (await adapter.listAssignments())
+        .filter((a) => a.status === 'active');
       if (assignments.length === 0) {
         clear(container);
         append(container, notice('info', null, t('f2.no_assignment')));
