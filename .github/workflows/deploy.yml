@@ -26,7 +26,7 @@ jobs:
     name: Checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The repository is public and the site is served from it, so a secret
       # committed to src/config.js is a secret published to the internet.
@@ -64,17 +64,21 @@ jobs:
               fi
             done < <(grep -oE "from '(\.[^']*)'" "$file" | sed -E "s/from '(.*)'/\1/")
           done < <(find src -name '*.js')
-          [ "$fail" -eq 0 ] && echo "All relative imports resolve."
-          exit "$fail"
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "All relative imports resolve."
 
-      # tests.html runs the suite in a browser. Puppeteer is already installed
-      # on the GitHub runner image, so this needs no lockfile and no install
-      # step in the repository itself.
+      # tests.html runs the suite in a real browser. Puppeteer is installed
+      # here rather than committed: the project has no package.json and no
+      # build step, and it should stay that way.
+      #
+      # The runner script is written into the workspace, not /tmp, because Node
+      # resolves bare imports from the importing file's directory - a script in
+      # /tmp cannot see ./node_modules however it was installed.
       - name: Run the test suite in a headless browser
         run: |
           set -euo pipefail
-          npx --yes puppeteer@23 browsers install chrome >/dev/null 2>&1 || true
-          cat > /tmp/run-tests.mjs <<'NODE'
+          npm install --no-save --no-audit --no-fund puppeteer@23
+          cat > ci-run-tests.mjs <<'NODE'
           import puppeteer from 'puppeteer';
           import http from 'node:http';
           import fs from 'node:fs';
@@ -127,7 +131,7 @@ jobs:
           server.close();
           process.exit(results.failed === 0 && errors.length === 0 ? 0 : 1);
           NODE
-          node /tmp/run-tests.mjs
+          node ci-run-tests.mjs
 
   deploy:
     name: Deploy
@@ -137,7 +141,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

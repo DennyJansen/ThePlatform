@@ -18,3 +18,9 @@ desktop.ini
 # src/config.js; anything else belongs in an edge function's environment.
 .env
 .env.*
+
+# Written by the CI test step, never committed.
+ci-run-tests.mjs
+node_modules/
+package-lock.json
+package.json
