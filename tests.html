@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Tests — Urenplatform</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    margin: 0; padding: 2rem 1.5rem 5rem; max-width: 62rem;
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+  .lead { opacity: 0.7; margin: 0 0 1.5rem; max-width: 60ch; }
+  .summary {
+    position: sticky; top: 0; padding: 0.85rem 1rem; margin-bottom: 1.5rem;
+    border-radius: 8px; font-weight: 700; letter-spacing: 0.01em;
+    background: Canvas; border: 2px solid currentColor;
+  }
+  .summary.ok   { color: #15803d; }
+  .summary.bad  { color: #b42318; }
+  .summary.busy { opacity: 0.6; }
+  .suite { margin-bottom: 1.5rem; }
+  .suite h2 { font-size: 0.95rem; margin: 0 0 0.4rem; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 0.15rem 0 0.15rem 0.9rem; white-space: pre-wrap; }
+  li.pass { color: #15803d; }
+  li.fail { color: #b42318; font-weight: 700; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+
+<h1>Test suite</h1>
+<p class="lead">
+  Runs in the browser — there is no build step in this project, so the suite is
+  served alongside the app and the deployed build can be checked in place.
+  Storage is snapshotted and restored, so running this does not disturb demo
+  data. <a href="index.html">Back to the app</a>.
+</p>
+
+<div class="summary busy" id="summary" role="status">Running…</div>
+<div id="output"></div>
+
+<script type="module">
+  import { run } from './src/test/runner.js';
+  import './src/test/tests.js';
+  import './src/test/flow.js';
+
+  const output = document.getElementById('output');
+  const summary = document.getElementById('summary');
+
+  run(output).then(({ passed, failed }) => {
+    summary.className = 'summary ' + (failed === 0 ? 'ok' : 'bad');
+    summary.textContent = failed === 0
+      ? passed + ' passed'
+      : failed + ' FAILED, ' + passed + ' passed';
+    // Read by CI: document.title carries the result for a headless check.
+    document.title = (failed === 0 ? 'PASS' : 'FAIL') + ' — ' + passed + '/' + (passed + failed);
+    window.__testResults = { passed, failed };
+  }).catch((err) => {
+    summary.className = 'summary bad';
+    summary.textContent = 'Suite crashed: ' + (err && err.message ? err.message : err);
+    window.__testResults = { passed: 0, failed: 1, error: String(err) };
+  });
+</script>
+
+</body>
+</html>

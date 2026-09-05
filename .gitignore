@@ -1,0 +1,20 @@
+# Nothing is built, so there is nothing to ignore from a build. These are the
+# things a machine tends to leave behind.
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+*.log
+.idea/
+.vscode/
+*.swp
+
+# Local-only settings. .claude/launch.json is committed on purpose: it is how
+# the preview server is started, and it contains no secrets.
+.claude/settings.local.json
+
+# Never commit a real environment file. Supabase's anon key belongs in
+# src/config.js; anything else belongs in an edge function's environment.
+.env
+.env.*

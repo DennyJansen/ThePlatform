@@ -1,0 +1,10 @@
+# Normalise to LF in the repository. The CI runner is Linux and the workflow
+# contains bash heredocs; a CRLF sneaking into one of those produces a
+# "command not found" with an invisible \r on the end of it.
+* text=auto eol=lf
+
+# Binary-ish assets, left alone.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.woff2 binary

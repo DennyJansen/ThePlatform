@@ -1,0 +1,154 @@
+name: Deploy to GitHub Pages
+
+# The app is static and has no build step, so "build" here means: check the
+# things a broken deploy would otherwise reveal in production, then upload the
+# repository as-is.
+#
+# Before the first run, set Settings -> Pages -> Source to "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once; never cancel one that is mid-flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The repository is public and the site is served from it, so a secret
+      # committed to src/config.js is a secret published to the internet.
+      # This is a blunt check on purpose: it is meant to be impossible to
+      # ignore, not to be clever.
+      # .github is excluded because this step's own pattern lives there and
+      # would match itself. Workflows take credentials from GitHub secrets and
+      # are reviewed on their own terms; client code is what ships to a browser.
+      - name: Refuse obvious secrets in client code
+        run: |
+          set -euo pipefail
+          if grep -rInE \
+            'service_role|SUPABASE_SERVICE|sk_live_|sk_test_|BEGIN (RSA |EC )?PRIVATE KEY|xox[baprs]-' \
+            --include='*.js' --include='*.html' --include='*.json' \
+            --exclude-dir='.github' --exclude-dir='.git' \
+            . ; then
+            echo "::error::A value that looks like a secret is committed to client code."
+            exit 1
+          fi
+          echo "No secret-shaped strings found."
+
+      # Every module is loaded by the browser directly, so a typo in an import
+      # path is a blank page rather than a build error. Catch it here.
+      - name: Check that every relative import resolves
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r file; do
+            dir=$(dirname "$file")
+            while IFS= read -r spec; do
+              target="$dir/$spec"
+              if [ ! -f "$target" ]; then
+                echo "::error file=$file::unresolved import '$spec'"
+                fail=1
+              fi
+            done < <(grep -oE "from '(\.[^']*)'" "$file" | sed -E "s/from '(.*)'/\1/")
+          done < <(find src -name '*.js')
+          [ "$fail" -eq 0 ] && echo "All relative imports resolve."
+          exit "$fail"
+
+      # tests.html runs the suite in a browser. Puppeteer is already installed
+      # on the GitHub runner image, so this needs no lockfile and no install
+      # step in the repository itself.
+      - name: Run the test suite in a headless browser
+        run: |
+          set -euo pipefail
+          npx --yes puppeteer@23 browsers install chrome >/dev/null 2>&1 || true
+          cat > /tmp/run-tests.mjs <<'NODE'
+          import puppeteer from 'puppeteer';
+          import http from 'node:http';
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const root = process.cwd();
+          const types = {
+            '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+            '.json': 'application/json', '.svg': 'image/svg+xml',
+          };
+
+          const server = http.createServer((req, res) => {
+            const url = req.url === '/' ? '/index.html' : req.url.split('?')[0];
+            const file = path.join(root, decodeURIComponent(url));
+            if (!file.startsWith(root) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+              res.writeHead(404).end('not found');
+              return;
+            }
+            res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'text/plain' });
+            fs.createReadStream(file).pipe(res);
+          });
+
+          await new Promise((r) => server.listen(4173, r));
+
+          // Adapter calls resolve on a macrotask. A throttled background page
+          // stretches each setTimeout(0) to about a second, which turns a
+          // ten-second suite into a job timeout. Keep the page unthrottled.
+          const browser = await puppeteer.launch({
+            args: [
+              '--no-sandbox',
+              '--disable-background-timer-throttling',
+              '--disable-backgrounding-occluded-windows',
+              '--disable-renderer-backgrounding',
+            ],
+          });
+          const page = await browser.newPage();
+          const errors = [];
+          page.on('pageerror', (e) => errors.push(String(e)));
+          await page.goto('http://localhost:4173/tests.html', { waitUntil: 'networkidle0' });
+          const results = await page.waitForFunction(
+            () => window.__testResults, { timeout: 30000 },
+          ).then((h) => h.jsonValue());
+
+          const failures = await page.$$eval('li.fail', (els) => els.map((e) => e.textContent));
+          for (const line of failures) console.error(line);
+          for (const err of errors) console.error('Page error:', err);
+
+          console.log(`${results.passed} passed, ${results.failed} failed`);
+          await browser.close();
+          server.close();
+          process.exit(results.failed === 0 && errors.length === 0 ? 0 : 1);
+          NODE
+          node /tmp/run-tests.mjs
+
+  deploy:
+    name: Deploy
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # .nojekyll is committed so Jekyll does not swallow anything; the whole
+      # repository is the site, since there is nothing to compile.
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
