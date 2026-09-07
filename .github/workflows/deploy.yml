@@ -143,15 +143,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # `enablement: true` turns Pages on if it is off, instead of failing.
-      # Switching the repository to private disables Pages, and switching it
-      # back does not re-enable it — the deploy then fails with a bare
-      # "Get Pages site failed" that says nothing about the cause. This makes
-      # the workflow fix that itself rather than needing someone to remember.
+      # If this step fails with "Get Pages site failed ... Not Found", Pages is
+      # switched off for the repository. Turn it back on:
+      #
+      #     Settings -> Pages -> Source -> GitHub Actions
+      #
+      # Making the repository private disables Pages, and making it public
+      # again does NOT re-enable it. The error says nothing about that, so it
+      # reads like a broken deploy rather than a setting.
+      #
+      # `enablement: true` on this action looks like the fix and is not: it
+      # calls the create-a-Pages-site API, which needs repository admin, and
+      # GITHUB_TOKEN does not have it. Tried, and it fails with "Resource not
+      # accessible by integration". Do not add it back.
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       # .nojekyll is committed so Jekyll does not swallow anything; the whole
       # repository is the site, since there is nothing to compile.
