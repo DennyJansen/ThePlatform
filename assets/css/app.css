@@ -970,3 +970,17 @@ select.input {
   font-weight: 500;
   color: var(--accent);
 }
+
+/* A heading row inside the fee table. Two supplies are shown as two blocks —
+   the freelancer's invoice and the platform's — because netting them before
+   VAT would misstate both parties' turnover. */
+.fees__section th {
+  padding-top: 0.9rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.fees__table tbody tr:first-child th { padding-top: 0.6rem; }

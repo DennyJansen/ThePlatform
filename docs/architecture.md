@@ -83,6 +83,26 @@ number rather than two numbers that usually agree.
 multiplying by 100, because `1.005 * 100` is `100.49999999999999` in binary
 floating point and rounds the wrong way. There is a test for exactly this.
 
+**Every rate is ex VAT** — the client's, the freelancer's, and the €2/hour
+deduction. Because the deduction is ex VAT it carries 21% of its own, which
+makes it a supply from the platform to the freelancer rather than a discount
+on their rate. So `computeFees` returns two supplies, each with its own VAT,
+and nets them only in cash:
+
+```
+freelancer -> platform   95.00 + 19.95 = 114.95   (self-billed)
+platform   -> freelancer  2.00 +  0.42 =   2.42   (the fee)
+                                          112.53   into the bank
+```
+
+The €93.00 of spec §3 is unchanged — it is what the freelancer keeps once VAT
+settles through their return, not what arrives. Screens show both, because a
+freelancer checking a confirmation is asking the second question.
+
+VAT is charged once on the line total, never per hour and multiplied. There is
+a test asserting the two agree at awkward hour counts, since that divergence
+would show up as an invoice disagreeing with the confirmation by a cent.
+
 ## The audit log
 
 Append only. `src/data/mock/store.js` checks the invariant on **every** write

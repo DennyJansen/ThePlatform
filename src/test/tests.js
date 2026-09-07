@@ -120,6 +120,82 @@ describe('Money — the fee arithmetic of spec section 3', () => {
   });
 });
 
+describe('VAT — spec §8.9, answered: every rate is ex VAT', () => {
+  it('adds VAT to the hourly rates, not the other way round', () => {
+    const f = computeFees(ASSIGNMENT, 1);
+    assert.equal(f.client_total, 10000, 'the client rate is ex VAT');
+    assert.equal(f.client_total_incl, 12100, '100.00 + 21%');
+    assert.equal(f.freelancer_gross, 9500, 'the freelancer rate is ex VAT');
+    assert.equal(f.freelancer_gross_incl, 11495, '95.00 + 21%');
+  });
+
+  it('treats the per-hour deduction as a supply that carries its own VAT', () => {
+    const f = computeFees(ASSIGNMENT, 1);
+    assert.equal(f.freelancer_fee, 200, '2.00 ex VAT');
+    assert.equal(f.freelancer_fee_vat, 42, '21% of 2.00');
+    assert.equal(f.freelancer_fee_incl, 242,
+      'the platform bills 2.42, not 2.00 — it is a service, not a discount');
+  });
+
+  it('nets the two supplies only in cash, never before VAT', () => {
+    const f = computeFees(ASSIGNMENT, 1);
+    assert.equal(f.freelancer_cash, 11253, '114.95 in, 2.42 out');
+    // Netting first would give VAT on 93.00 = 19.53, and a total of 112.53 by
+    // coincidence — but it understates the freelancer's turnover by 2.00 and
+    // hides an input VAT credit they are entitled to.
+    assert.equal(vatCents(f.freelancer_net), 1953);
+    assert.ok(f.freelancer_gross_vat !== vatCents(f.freelancer_net),
+      'VAT on the gross is not VAT on the net');
+  });
+
+  it('leaves the ex-VAT model of spec §3 untouched', () => {
+    const f = computeFees(ASSIGNMENT, 1);
+    assert.equal(f.freelancer_net, 9300, 'what the freelancer keeps is still 93.00');
+    assert.equal(f.platform_take, 700, 'the platform still takes 7.00 ex VAT');
+    assert.equal(f.platform_take, f.client_total - f.freelancer_net);
+  });
+
+  it('holds at realistic monthly volumes', () => {
+    const f = computeFees(ASSIGNMENT, 168);
+    assert.equal(f.client_total, 1680000, '168h at 100.00');
+    assert.equal(f.client_total_incl, 2032800, 'plus 21%');
+    assert.equal(f.freelancer_gross, 1596000, '168h at 95.00');
+    assert.equal(f.freelancer_gross_incl, 1931160, 'plus 21%');
+    assert.equal(f.freelancer_fee, 33600, '168h at 2.00');
+    assert.equal(f.freelancer_fee_incl, 40656, 'plus 21%');
+    assert.equal(f.freelancer_cash, 1931160 - 40656);
+  });
+
+  /**
+   * VAT is applied once, to the line total. Applying it per hour and then
+   * multiplying would round 19.95 per hour and drift; this asserts the two
+   * agree, which is what stops an invoice disagreeing with the confirmation
+   * screen by a cent or two at high hour counts.
+   */
+  it('charges VAT on the line total, not per hour', () => {
+    for (const hours of [1, 7.25, 168, 173.75, 999.5]) {
+      const f = computeFees(ASSIGNMENT, hours);
+      assert.equal(
+        f.freelancer_gross_vat,
+        vatCents(lineTotalCents(hours, ASSIGNMENT.freelancer_rate_per_hour)),
+        'VAT drifted at ' + hours + ' hours',
+      );
+      assert.equal(
+        f.freelancer_cash,
+        f.freelancer_gross_incl - f.freelancer_fee_incl,
+        'cash must be the two gross figures, netted',
+      );
+    }
+  });
+
+  it('reports the rate it used, so a screen never assumes 21%', () => {
+    assert.equal(computeFees(ASSIGNMENT, 1).vat_rate_bp, 2100);
+    const reduced = computeFees(ASSIGNMENT, 1, 900);
+    assert.equal(reduced.vat_rate_bp, 900);
+    assert.equal(reduced.freelancer_fee_vat, 18, '9% of 2.00');
+  });
+});
+
 /* ------------------------------------------------------------------ */
 
 describe('Dates', () => {

@@ -122,9 +122,16 @@ including the hash route the link should land on.
 This gets the approval loop onto real infrastructure. It does not finish v1.
 Remaining, in the spec's own order:
 
-- **Step 4 — invoices, both directions, as PDFs.** Needs the VAT treatment of
-  the €2/hour deduction answered first (spec §8.9, §10). Generate in an edge
-  function, store in Supabase Storage, never in the browser.
+- **Step 4 — invoices, both directions, as PDFs.** The VAT question is now
+  answered: all rates are ex VAT, and the €2/hour deduction carries its own
+  21%, which makes it a supply rather than a discount. `computeFees()` already
+  returns every figure a template needs.
+
+  One question remains and it shapes the templates: **one document or two.**
+  A self-billed invoice is the freelancer's sales invoice; the platform's fee
+  belongs on the platform's own invoice, not as a negative line on theirs. See
+  docs/open-items.md item 2. Settle that with the accountant, then generate in
+  an edge function and store in Supabase Storage, never in the browser.
 - **Step 5 — the seven emails.** An edge function plus a transactional sender.
   Seven. Adding an eighth means removing one.
 - **Step 6 — additional charges.** The table and the separate approve/reject

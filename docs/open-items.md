@@ -19,11 +19,44 @@ once the value is set. Billing it is step 4 work.
 
 ### 2. VAT treatment of the freelancer-side deduction
 
-**Default:** unresolved, and deliberately not implemented. Every figure this
-build shows is ex-VAT and labelled *excl. btw* / *excl. VAT*. `VAT_RATE_BP`
-exists in `src/domain/money.js` at 21% and is used by nothing yet.
-**Blocks:** step 4. Do not build the self-billed invoice template before the
-accountant answers, or it gets built twice.
+**ANSWERED.** Every rate is ex VAT — the client's €100, the freelancer's €95,
+and the €2 deduction.
+
+That the €2 is *ex VAT* settles more than the number. A discount on someone's
+rate carries no VAT of its own; a €2 that has 21% added to it is a **taxable
+supply from the platform to the freelancer** — an intermediation service they
+buy, and whose VAT they reclaim. So there are two supplies, not one netted
+amount:
+
+| | Ex VAT | VAT 21% | Incl. |
+|---|---|---|---|
+| Freelancer → platform (self-billed) | 95.00 | 19.95 | 114.95 |
+| Platform → freelancer (the fee) | 2.00 | 0.42 | 2.42 |
+| **Cash to the freelancer** | | | **112.53** |
+
+€93.00/hour is still what the freelancer keeps once VAT settles through their
+return. It is not what arrives in the bank, and the confirmation screen now
+shows both.
+
+**Implemented in:** `computeFees()` in `src/domain/money.js`, which returns
+ex-VAT, VAT and inclusive figures per supply plus `freelancer_cash`. Tested
+under "VAT — spec §8.9, answered". VAT is applied once to the line total, not
+per hour and multiplied, with a test that the two agree at awkward hour counts.
+
+**Still open, and it is the part that blocks step 4:** *one document or two?*
+
+Spec §3 says the fee is "deducted on the self-billed invoice". A self-billed
+invoice is the **freelancer's sales invoice**, issued in their name. Putting
+the platform's own fee on it as a negative line reduces their stated turnover
+by €2/hour, which is wrong if the fee is a separate supply — and "ex VAT" says
+it is. The consistent treatment is two documents, netted in payment:
+
+1. a self-billed invoice, freelancer → platform, €95/hour + VAT;
+2. an invoice from the platform → freelancer, €2/hour + VAT.
+
+That is the strong default and what the arithmetic now assumes, but it is a
+question for the accountant and not one to settle from a code comment. It
+determines the invoice templates, so answer it before step 4 starts.
 
 ### 3. Payout timing versus client payment terms (spec §8.4)
 

@@ -249,7 +249,7 @@ export async function renderReview(container, { adapter, periodId }) {
           el('h2', { class: 'section__title' }, t('c1.total_to_invoice')),
           clientFeeTable(current.summary),
           definitionList([
-            [t('period.rate'), t('period.rate_unit', {
+            [t('period.rate'), t('period.rate_unit_ex_vat', {
               amount: formatMoney(current.assignment.client_rate_per_hour, locale),
             })],
           ]),

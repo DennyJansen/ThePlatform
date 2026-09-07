@@ -66,7 +66,7 @@ function periodHeader(view) {
       el('p', { class: 'period-head__meta' }, [
         assignment.title,
         el('span', { class: 'sep', 'aria-hidden': 'true' }, '·'),
-        t('period.rate_unit', {
+        t('period.rate_unit_ex_vat', {
           amount: formatMoney(assignment.freelancer_rate_per_hour, locale),
         }),
         period.version > 1

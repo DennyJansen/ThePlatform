@@ -132,7 +132,7 @@ export function vatCents(exVatCents, rateBp = VAT_RATE_BP) {
  * platform_take is asserted to equal client_total - freelancer_net, which is
  * the invariant that catches a mis-entered rate before it reaches an invoice.
  */
-export function computeFees(assignment, hours) {
+export function computeFees(assignment, hours, vatRateBp = VAT_RATE_BP) {
   const h = Number.isFinite(hours) ? hours : 0;
   const clientTotal = lineTotalCents(h, assignment.client_rate_per_hour);
   const freelancerGross = lineTotalCents(h, assignment.freelancer_rate_per_hour);
@@ -140,14 +140,47 @@ export function computeFees(assignment, hours) {
   const freelancerNet = freelancerGross - freelancerFee;
   const clientSideSpread = clientTotal - freelancerGross;
 
+  // VAT. Spec §8.9 / §10 asked how the per-hour deduction is treated; the
+  // answer is that the €2 is EX VAT, which makes it a taxable supply from the
+  // platform to the freelancer rather than a discount on their rate. So VAT is
+  // charged on it, and the freelancer reclaims that VAT like any other cost.
+  //
+  // Two separate supplies, therefore two separate VAT amounts, and they are
+  // NOT netted before VAT is applied:
+  //
+  //   freelancer -> platform   95.00 + 19.95 VAT = 114.95   (self-billed)
+  //   platform   -> freelancer  2.00 +  0.42 VAT =   2.42   (platform's fee)
+  //   cash to the freelancer                       112.53
+  //
+  // 93.00 is still what they keep once the VAT washes through, which is why
+  // freelancer_net is unchanged. It is not what lands in the bank.
+  const clientTotalVat = vatCents(clientTotal, vatRateBp);
+  const freelancerGrossVat = vatCents(freelancerGross, vatRateBp);
+  const freelancerFeeVat = vatCents(freelancerFee, vatRateBp);
+
   return {
     hours: round2(h),
+    vat_rate_bp: vatRateBp,
+
+    // Ex VAT — the figures the fee model is defined in.
     client_total: clientTotal,
     freelancer_gross: freelancerGross,
     freelancer_fee: freelancerFee,
     freelancer_net: freelancerNet,
     client_side_spread: clientSideSpread,
     platform_take: clientSideSpread + freelancerFee,
+
+    // VAT, per supply.
+    client_total_vat: clientTotalVat,
+    freelancer_gross_vat: freelancerGrossVat,
+    freelancer_fee_vat: freelancerFeeVat,
+
+    // Including VAT — the figures that move between bank accounts.
+    client_total_incl: clientTotal + clientTotalVat,
+    freelancer_gross_incl: freelancerGross + freelancerGrossVat,
+    freelancer_fee_incl: freelancerFee + freelancerFeeVat,
+    freelancer_cash: (freelancerGross + freelancerGrossVat)
+      - (freelancerFee + freelancerFeeVat),
   };
 }
 
