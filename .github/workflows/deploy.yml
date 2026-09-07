@@ -143,8 +143,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # `enablement: true` turns Pages on if it is off, instead of failing.
+      # Switching the repository to private disables Pages, and switching it
+      # back does not re-enable it — the deploy then fails with a bare
+      # "Get Pages site failed" that says nothing about the cause. This makes
+      # the workflow fix that itself rather than needing someone to remember.
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       # .nojekyll is committed so Jekyll does not swallow anything; the whole
       # repository is the site, since there is nothing to compile.
