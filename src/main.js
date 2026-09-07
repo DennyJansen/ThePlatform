@@ -16,6 +16,7 @@ import { el, append, clear } from './ui/dom.js';
 import { notice, emptyState } from './ui/components/ui.js';
 
 import { renderSignIn, renderTokenLanding } from './ui/screens/signin.js';
+import { renderSignupChoice, renderSignupForm } from './ui/screens/signup.js';
 import { renderFreelancerPeriod } from './ui/screens/freelancerPeriod.js';
 import { renderHistory } from './ui/screens/history.js';
 import { renderInbox, renderReview } from './ui/screens/approverReview.js';
@@ -114,6 +115,28 @@ function registerRoutes() {
     }
     const main = frame();
     renderSignIn(main, { adapter, onSignedIn });
+  });
+
+  route('/signup', async () => {
+    await refreshSession();
+    if (session) {
+      navigate(homeFor(session), { replace: true });
+      return;
+    }
+    renderSignupChoice(frame());
+  });
+
+  route('/signup/:kind', async ({ params }) => {
+    await refreshSession();
+    if (session) {
+      navigate(homeFor(session), { replace: true });
+      return;
+    }
+    if (params.kind !== 'freelancer' && params.kind !== 'company') {
+      navigate('/signup', { replace: true });
+      return;
+    }
+    renderSignupForm(frame(), { adapter, kind: params.kind, onSignedIn });
   });
 
   route('/signin/token/:token', async ({ params }) => {

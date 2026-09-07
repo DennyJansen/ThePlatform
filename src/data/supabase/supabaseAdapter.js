@@ -65,6 +65,19 @@ export async function createSupabaseAdapter(settings) {
 
     requestMagicLink: pending('requestMagicLink'),
     consumeMagicLink: pending('consumeMagicLink'),
+
+    /**
+     * Sign-up. `auth.signInWithOtp({ email, options: { shouldCreateUser: true,
+     * data: {...} } })` creates the auth user and sends the link; a trigger on
+     * auth.users then inserts the matching app_users row from the metadata.
+     * See 003-signup.sql.
+     *
+     * Keep the "existing address gets a link, not an error" behaviour. Supabase
+     * does this by default with shouldCreateUser, which is one of the reasons
+     * to let it own the flow rather than checking for the address first.
+     */
+    signUpFreelancer: pending('signUpFreelancer'),
+    signUpCompany: pending('signUpCompany'),
     getSession: pending('getSession'),
     signOut: pending('signOut'),
 

@@ -54,6 +54,12 @@ import {
   currentVersion,
   normaliseEntries,
 } from '../../domain/rules.js';
+import {
+  findOrganizationByKvk,
+  normaliseCompanySignup,
+  normaliseFreelancerSignup,
+  resolveExistingAccount,
+} from '../../domain/signup.js';
 import { addDays, addHours, periodKey } from '../../domain/dates.js';
 import { load, transact, save, newId, newToken, storageIsPersistent } from './store.js';
 import { buildSeed } from './seed.js';
@@ -185,6 +191,51 @@ function requireSession(db) {
   return user;
 }
 
+/**
+ * Mint a single-use sign-in link for a user and record the request.
+ *
+ * Shared by requestMagicLink and both sign-up paths, so a brand new account
+ * and an existing one produce byte-identical responses. That is what makes
+ * sign-up safe to expose: it cannot be used to test whether an address is
+ * registered here.
+ */
+function issueLink(result) {
+  const token = newToken();
+  const expiresAt = addHours(new Date().toISOString(), MAGIC_LINK_TTL_HOURS);
+
+  transact((d) => {
+    d.magic_links.push({
+      id: newId('mlk'),
+      token,
+      user_id: result.user.id,
+      email: result.user.email,
+      created_at: new Date().toISOString(),
+      expires_at: expiresAt,
+      used_at: null,
+    });
+    appendAudit(d, result.user.id, null, 'User', result.user.id,
+      AUDIT_ACTION.MAGIC_LINK_REQUESTED, { email: result.user.email });
+  });
+
+  // Deliberately does NOT report whether the account was just created.
+  // A response that distinguishes "created" from "already existed" is exactly
+  // the enumeration oracle this design exists to avoid, and a field nobody
+  // renders is still a field somebody can read.
+  //
+  // `organization_name` is the one exception, and only on the company path: it
+  // is the person's own company, the KvK they typed is public, and being told
+  // "you have been added to Meridiaan Bouwgroep" is worth more than the very
+  // little it reveals.
+  return later({
+    token,
+    expires_at: expiresAt,
+    delivery: 'on_screen',
+    email: result.user.email,
+    joined_existing: !!result.joined_existing,
+    organization_name: result.organization_name || null,
+  });
+}
+
 function requirePeriod(db, periodId) {
   const period = db.periods.find((p) => p.id === periodId);
   if (!period) throw new DomainError(ERROR.NOT_FOUND, 'No such period');
@@ -230,24 +281,7 @@ export function createMockAdapter() {
           return fail(ERROR.NOT_AUTHORISED, 'Ops signs in to the admin panel');
         }
 
-        const token = newToken();
-        const expiresAt = addHours(new Date().toISOString(), MAGIC_LINK_TTL_HOURS);
-
-        transact((d) => {
-          d.magic_links.push({
-            id: newId('mlk'),
-            token,
-            user_id: user.id,
-            email: user.email,
-            created_at: new Date().toISOString(),
-            expires_at: expiresAt,
-            used_at: null,
-          });
-          appendAudit(d, user.id, null, 'User', user.id,
-            AUDIT_ACTION.MAGIC_LINK_REQUESTED, { email: user.email });
-        });
-
-        return later({ token, expires_at: expiresAt, delivery: 'on_screen' });
+        return issueLink({ user, outcome: 'signed_in_existing' });
       } catch (err) {
         return Promise.reject(err);
       }
@@ -665,6 +699,105 @@ export function createMockAdapter() {
             actor_name: (findUser(db, e.actor_id) || {}).name || 'onbekend',
           }));
         return later(rows);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /* ---------------- Sign-up ---------------- */
+
+    /**
+     * Create a freelancer account and issue a sign-in link.
+     *
+     * Reverses spec §4/F1's "accounts are created by ops" for the marketplace
+     * side only — signing up gets someone an account and a profile, never an
+     * assignment. Ops still sets those up when a placement is agreed.
+     *
+     * An address that already has an account is NOT reported as taken. The
+     * response is "check your email" either way, and the existing account
+     * simply gets a sign-in link: the person gets in, and someone probing a
+     * list of addresses learns nothing about who uses this platform.
+     */
+    signUpFreelancer(input) {
+      try {
+        const result = transact((d) => {
+          const fields = normaliseFreelancerSignup(input);
+          const existing = resolveExistingAccount(d.users, fields.email);
+          if (existing) return { user: existing, outcome: 'signed_in_existing' };
+
+          const user = {
+            id: newId('usr'),
+            email: fields.email,
+            name: fields.name,
+            role: ROLE.FREELANCER,
+            organization_id: null,
+            outreach_consent: fields.outreach_consent,
+            created_at: new Date().toISOString(),
+          };
+          d.users.push(user);
+          appendAudit(d, user.id, null, 'User', user.id, AUDIT_ACTION.ACCOUNT_CREATED,
+            { role: ROLE.FREELANCER });
+          return { user, outcome: 'created' };
+        });
+        return issueLink(result);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /**
+     * Create a company account. The KvK number decides whether a second person
+     * from the same company joins the existing organisation or starts one —
+     * see the note in domain/signup.js for why it is KvK and not the email
+     * domain.
+     *
+     * The website is stored. Nothing is fetched from it; see data/enrichment.js.
+     */
+    signUpCompany(input) {
+      try {
+        const result = transact((d) => {
+          const fields = normaliseCompanySignup(input);
+          const existing = resolveExistingAccount(d.users, fields.email);
+          if (existing) return { user: existing, outcome: 'signed_in_existing' };
+
+          let org = findOrganizationByKvk(d.organizations, fields.organization.kvk_number);
+          let joined = true;
+
+          if (!org) {
+            joined = false;
+            org = {
+              id: newId('org'),
+              ...fields.organization,
+              created_at: new Date().toISOString(),
+            };
+            d.organizations.push(org);
+          }
+
+          const user = {
+            id: newId('usr'),
+            email: fields.email,
+            name: fields.name,
+            role: ROLE.COMPANY_ADMIN,
+            organization_id: org.id,
+            outreach_consent: false,
+            created_at: new Date().toISOString(),
+          };
+          d.users.push(user);
+
+          appendAudit(d, user.id, null, 'User', user.id, AUDIT_ACTION.ACCOUNT_CREATED,
+            { role: ROLE.COMPANY_ADMIN });
+          appendAudit(d, user.id, null, 'Organization', org.id,
+            joined ? AUDIT_ACTION.ORGANIZATION_JOINED : AUDIT_ACTION.ORGANIZATION_CREATED,
+            { kvk_number: org.kvk_number, name: org.name });
+
+          return {
+            user,
+            outcome: 'created',
+            joined_existing: joined,
+            organization_name: joined ? org.name : null,
+          };
+        });
+        return issueLink(result);
       } catch (err) {
         return Promise.reject(err);
       }

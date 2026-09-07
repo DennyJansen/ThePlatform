@@ -887,3 +887,86 @@ select.input {
   padding: 0.35rem 0;
 }
 .applicant__more .prose__body { margin: 0.5rem 0 1rem; }
+
+/* =====================================================================
+   Sign-up and CV import
+   ===================================================================== */
+
+.panel__foot {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.25rem 0;
+}
+
+/* The two doors into the product. Cards rather than a radio group, because
+   picking a side is the whole screen and should look like it. */
+.choice { display: grid; gap: 0.75rem; }
+.choice__card {
+  display: block;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text);
+  background: var(--surface);
+}
+.choice__card:hover { background: var(--surface-2); border-color: var(--accent); }
+.choice__title { display: block; font-weight: 650; margin-bottom: 0.15rem; }
+.choice__body { display: block; font-size: 0.88rem; color: var(--text-muted); }
+
+.consent--inline { margin: 0 0 1rem; padding: 0.9rem 1rem; }
+
+/* ------------------------------------------------------------- CV import */
+
+.cv {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  max-width: var(--measure);
+}
+.cv__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+/* The real input is hidden and driven by its <label>, which is styled as a
+   button. Hidden with clip rather than display:none so it stays focusable
+   and the keyboard path still works. */
+.cv__input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.cv__input:focus-visible + .btn,
+.cv__row .btn:has(+ .cv__input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cv__status { margin-top: 0.75rem; }
+.cv__status .notice { margin-bottom: 0; }
+.cv__list { font-size: 0.88rem; margin-top: 0.35rem; }
+.cv__check { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem; }
+
+/* A field the CV filled in. Marked so someone can see at a glance what to
+   check, and left marked until they save. */
+.field.is-from-cv .input {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.field.is-from-cv .label::after {
+  content: ' · ' attr(data-from-cv);
+  font-weight: 500;
+  color: var(--accent);
+}

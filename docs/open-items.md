@@ -82,6 +82,44 @@ correction path, this is the part that changes.
 
 ---
 
+---
+
+## Added by sign-up and CV import
+
+### CV retention and deletion
+
+**Default: not decided, and currently not urgent.** Only the filename is
+stored; the text is extracted in the browser and thrown away. That stops being
+true the moment the file goes into Supabase Storage, and at that point
+retention, deletion and access all need answers. See docs/compliance.md,
+"A CV is personal data, and now you hold it".
+
+### Company website enrichment
+
+**Default: collected, not used.** The URL is stored on the organisation.
+Nothing fetches it, because a browser cannot. The edge function that will is
+sketched at the bottom of `src/data/enrichment.js`. Two things to decide before
+writing it: whether to respect `robots.txt` (recommended — these are companies
+you will have to talk to) and what to do when a site says nothing useful, which
+will be most of them.
+
+### Whether a company sign-up should be reviewed
+
+**Default: no review.** Anyone with a valid-looking KvK number gets an account
+and can post projects immediately, and a second person with the same KvK joins
+automatically. That is right while the first placements are with companies you
+know, and wrong the first time someone posts a project that should not be on
+the board. There is no moderation queue and no report button.
+
+### Whether joining an organisation should need approval
+
+**Default: automatic.** The second person with a matching KvK is added to the
+existing organisation without the first admin being asked. Convenient, and
+exactly what you would not want if someone guessed a KvK number to see a
+competitor's projects. KvK numbers are public.
+
+---
+
 ## Not from §10, but decided in code and worth revisiting
 
 **Session length.** 12 hours. Magic links: 24 hours, single use. Both are

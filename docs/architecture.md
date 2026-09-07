@@ -137,6 +137,50 @@ final rates, names an approver and uploads the agreement. Until then no period
 opens, and the `active_needs_approver` constraint refuses to let it go live
 half-configured.
 
+## Sign-up, CV import, and the thing that cannot work
+
+**Sign-up reverses §4/F1's "accounts are created by ops"**, which a marketplace
+cannot live with. It does not reverse "no passwords": sign-up collects details
+and sends a magic link, which is the mechanism §4/F1 already specified and the
+only honest one in a build served from a public repository.
+
+Two rules carry weight:
+
+- **An account is not an assignment.** Signing up gets someone an account and a
+  profile. Ops still creates assignments, with rates and a signed contract.
+- **Sign-up is not an account oracle.** A public form that says "that address
+  is already registered" answers a question anyone can ask about anyone. An
+  existing address gets a sign-in link instead, and the response is
+  byte-identical either way — no `outcome` field, no different wording. There
+  is a test for the shape of both responses.
+
+Under Supabase the same clamp matters more: sign-up metadata is written by the
+browser, so someone can claim `"role": "ops"`. The trigger in `003-signup.sql`
+forces anything outside `{freelancer, company_admin}` to freelancer. That
+`CASE` is the difference between a sign-up form and privilege escalation.
+
+**CV import is regexes and a fixed vocabulary, and says so.** No model, because
+an API key in a public repo is a leaked API key. `.txt` reads directly, `.docx`
+is unpacked by about sixty lines of ZIP reading plus the platform's own
+`DecompressionStream` — no library — and `.pdf` loads pdf.js from a pinned CDN
+build, on demand, only when someone actually uploads one.
+
+It **prefills and stops**. Fields are marked "from your CV", nothing is saved
+until the person presses Save, and it never guesses a rate: a wrong number in a
+field nobody checked is worse than an empty field. An image-only PDF is
+reported as a scan rather than as a failure to understand, because those call
+for different responses and OCR is not in this build.
+
+**Website enrichment cannot work here at all.** A browser will not fetch
+`https://theircompany.nl` from this origin — the same-origin policy blocks it
+and no company website sends the header that would allow it. So the URL is
+collected and stored, `enrichFromWebsite` returns `{ available: false }`, and
+the sign-up form says the profile is filled in by hand for now. A public CORS
+proxy would work today and was rejected: every company's URL through a
+stranger's server, a dependency that breaks without warning. The edge function
+that replaces it is sketched at the bottom of `src/data/enrichment.js`,
+including the SSRF check that is the easiest part to leave out.
+
 ## What changes under Supabase
 
 | Concern | Mock | Supabase |
@@ -151,5 +195,9 @@ half-configured.
 | Profile visibility | `assertProfileVisibleTo` | the `read_profiles` policy |
 | Application transitions | adapter method | `rpc()` into a security-definer function |
 | Scope never on an assignment | omitted by `buildAssignmentFromHire` | `trg_assignment_no_scope` |
+| Sign-up | `signUpFreelancer` / `signUpCompany` | `signInWithOtp` + the `trg_new_auth_user` trigger |
+| Role clamp on sign-up | the adapter sets it | the `CASE` in `handle_new_auth_user` |
+| CV file | filename only | the file in Supabase Storage |
+| Website enrichment | returns `{available: false}` | an `enrich-company` edge function |
 
 The screens do not change. That is the point of the port.

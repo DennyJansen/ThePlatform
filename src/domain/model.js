@@ -143,7 +143,12 @@ export const AUDIT_ACTION = Object.freeze({
   APPLICATION_HIRED: 'application.hired',
 
   PROFILE_UPDATED: 'profile.updated',
+  PROFILE_IMPORTED_FROM_CV: 'profile.imported_from_cv',
   ASSIGNMENT_CREATED_FROM_HIRE: 'assignment.created_from_hire',
+
+  ACCOUNT_CREATED: 'account.created',
+  ORGANIZATION_CREATED: 'organization.created',
+  ORGANIZATION_JOINED: 'organization.joined',
 });
 
 /**

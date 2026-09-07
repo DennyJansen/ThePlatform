@@ -123,6 +123,11 @@ export function renderSignIn(container, { adapter, onSignedIn }) {
         emailInput,
         errorSlot,
         submitButton,
+        el('p', { class: 'panel__foot' }, [
+          t('signin.no_account'),
+          ' ',
+          el('a', { class: 'link', href: '#/signup' }, t('signup.title')),
+        ]),
       ]),
 
       // Demo affordance. Hidden entirely once a real backend is connected,

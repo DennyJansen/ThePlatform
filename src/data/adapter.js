@@ -72,6 +72,10 @@
 export const REQUIRED_METHODS = Object.freeze([
   'requestMagicLink',
   'consumeMagicLink',
+  // Sign-up. Both return exactly what requestMagicLink returns, so a new
+  // account and an existing one are indistinguishable from outside.
+  'signUpFreelancer',
+  'signUpCompany',
   'getSession',
   'signOut',
   'listAssignments',

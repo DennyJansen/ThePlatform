@@ -103,6 +103,34 @@ It is labelled "indicative scope" in both languages, with a line under it
 saying it is not a roster and the freelancer decides how they arrange their
 hours.
 
+### Consent is captured at sign-up, as §6 says
+
+§6: *"Direct outreach based on profile data requires opt-in captured at
+signup."* The freelancer sign-up form now carries that checkbox, unticked, with
+the same wording as the profile screen. Only a real boolean `true` counts —
+`normaliseFreelancerSignup` and the SQL trigger both refuse a string `"true"`,
+which is what a sloppy form serialisation produces and what would quietly opt
+everyone in.
+
+### A CV is personal data, and now you hold it
+
+Uploading CVs means holding people's employment history, contact details and
+sometimes more than that. In this build only the filename is stored and the
+text never leaves the browser, so the exposure is small. That changes the day
+the file goes into Supabase Storage.
+
+Before that day, three things need an answer, and §10 has none of them:
+
+- **Retention.** How long is a CV kept after an application is decided, or
+  after an account goes quiet? "Forever" is a decision, not a default.
+- **Deletion.** A freelancer asking to be deleted must take the CV with them,
+  including copies attached to applications a company has already read.
+- **Access.** Right now a company sees a profile through an application. If the
+  CV file becomes downloadable, decide whether it is downloadable forever, or
+  only while the application is live.
+
+Adjacent to §10's open item on receipt retention, and worth deciding together.
+
 ### Postings must not read like job adverts
 
 The description field's help text asks for **the work and the outcome, not the
