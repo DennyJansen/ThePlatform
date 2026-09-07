@@ -112,9 +112,24 @@ export const APPLICATION_ACTOR = Object.freeze({
   withdraw: 'freelancer',
 });
 
+/**
+ * A settled month produces THREE documents, not two.
+ *
+ * Spec §3 listed two directions, on the assumption that the €2/hour deduction
+ * was a line on the self-billed invoice. It is not: the fee is ex VAT, which
+ * makes it a taxable supply from the platform to the freelancer, and a
+ * self-billed invoice is the *freelancer's own sales invoice*. Putting the
+ * platform's fee on it as a negative line understates their turnover.
+ *
+ * So the fee gets its own document, and the two are netted in payment.
+ */
 export const INVOICE_DIRECTION = Object.freeze({
+  /** Platform -> client. Hours at the client rate. */
   TO_CLIENT: 'to_client',
+  /** Freelancer -> platform, issued by the platform in the freelancer's name. */
   SELF_BILLED_TO_FREELANCER: 'self_billed_to_freelancer',
+  /** Platform -> freelancer. The per-hour intermediation fee. */
+  PLATFORM_FEE_TO_FREELANCER: 'platform_fee_to_freelancer',
 });
 
 /** Every action name that may appear in an AuditEvent. Spec §3. */

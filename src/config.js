@@ -42,4 +42,28 @@ export const CONFIG = Object.freeze({
    * editor. Empty means the link is hidden.
    */
   adminUrl: '',
+
+  /**
+   * The platform's own company details, as they must appear on an invoice.
+   *
+   * Dutch law requires the issuer's name, address, KvK and BTW number on every
+   * invoice. These are empty on purpose: buildInvoiceSet() refuses to produce
+   * a document for a party that is missing them, so an incomplete setup fails
+   * loudly rather than shipping something that looks like an invoice and is
+   * not a valid one.
+   *
+   * Fill these in before step 4 goes anywhere near a real month. Nothing here
+   * is secret — it is printed on every invoice — so it is fine in a public
+   * repository.
+   */
+  platform: {
+    name: '',
+    kvk_number: '',
+    vat_number: '',
+    address: '',
+    billing_email: '',
+    iban: '',
+    /** Prefix for the platform's own invoice numbers. See docs/open-items.md. */
+    invoice_prefix: 'PF',
+  },
 });

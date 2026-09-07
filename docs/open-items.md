@@ -43,20 +43,65 @@ ex-VAT, VAT and inclusive figures per supply plus `freelancer_cash`. Tested
 under "VAT — spec §8.9, answered". VAT is applied once to the line total, not
 per hour and multiplied, with a test that the two agree at awkward hour counts.
 
-**Still open, and it is the part that blocks step 4:** *one document or two?*
+**Also answered: two documents, netted in payment.** So a settled month
+produces **three** documents in total, not the two spec §3 listed:
 
-Spec §3 says the fee is "deducted on the self-billed invoice". A self-billed
-invoice is the **freelancer's sales invoice**, issued in their name. Putting
-the platform's own fee on it as a negative line reduces their stated turnover
-by €2/hour, which is wrong if the fee is a separate supply — and "ex VAT" says
-it is. The consistent treatment is two documents, netted in payment:
+| # | From → to | Amount | Notes |
+|---|---|---|---|
+| 1 | platform → client | hours × €100 + VAT | payment terms from the org |
+| 2 | freelancer → platform | hours × €95 + VAT | self-billed, in their name |
+| 3 | platform → freelancer | hours × €2 + VAT | the fee, as its own supply |
 
-1. a self-billed invoice, freelancer → platform, €95/hour + VAT;
-2. an invoice from the platform → freelancer, €2/hour + VAT.
+2 and 3 net when the money moves. They are **not** netted before VAT and they
+are **not** one document. The fee never appears as a negative line on the
+freelancer's own sales invoice.
 
-That is the strong default and what the arithmetic now assumes, but it is a
-question for the accountant and not one to settle from a code comment. It
-determines the invoice templates, so answer it before step 4 starts.
+**Implemented in:** `buildInvoiceSet()` in `src/domain/invoice.js`, plus
+`INVOICE_DIRECTION.PLATFORM_FEE_TO_FREELANCER` and migration
+`004-invoices.sql`. Tested under "Invoices — three documents". The suite
+asserts the invoice totals equal the figures the freelancer already approved
+on the confirmation screen, which is spec §3's guarantee reaching all the way
+to the document.
+
+### 2b. Invoice numbering — NOT answered, and it blocks step 4
+
+Now the real obstacle. Dutch invoices need a sequential, gapless number per
+issuer, and there are three issuers here — two of which are not the platform.
+
+Document 2 is the problem. A self-billed invoice carries the **freelancer's**
+number sequence, because it is their sales invoice. A freelancer who also
+invoices other clients directly already has a sequence, and this platform does
+not control it. Issuing `2026-0007` in their name while they have used that
+number themselves produces two different invoices with one number, in their
+accounts, under their KvK.
+
+The usual answers, none of them free:
+
+- **A reserved block or prefix per freelancer.** Agree in the terms that
+  self-billed invoices use a distinct series (e.g. `DENSEN-2026-0007`). Clean,
+  but their accountant has to accept a second series.
+- **The freelancer supplies the next number.** Accurate, and a manual step
+  every month that defeats the point of self-billing.
+- **The platform numbers them and the freelancer excludes that series.** Works
+  where the freelancer bills nobody else; brittle otherwise.
+
+`formatInvoiceNumber()` exists with a per-issuer prefix and is deliberately
+plain, so nobody mistakes it for a decision. **Answer this with the accountant
+before generating a single real invoice** — renumbering issued invoices is not
+something you can do afterwards.
+
+### 2c. Where invoices are generated
+
+**Decided: server-side, not in the browser.** `buildInvoiceSet` is pure and
+takes its numbers as an argument; it refuses to invent one. A browser that can
+mint invoice numbers can mint two invoices with the same number. Rendering to
+PDF and allocating numbers both belong in an edge function once the Supabase
+step is done.
+
+`CONFIG.platform` holds the platform's own name, KvK, BTW number and address.
+It is empty, and `buildInvoiceSet` refuses to produce a document for a party
+missing them — an incomplete setup fails loudly rather than shipping something
+that looks like an invoice and is not a valid one.
 
 ### 3. Payout timing versus client payment terms (spec §8.4)
 

@@ -14,7 +14,8 @@ the adapter methods, flip one flag in `src/config.js`.
    financial data and there is no reason for it to leave the EU.
 2. Run `src/data/supabase/schema.sql` in the SQL editor, once, whole.
    Then `002-marketplace.sql` (projects, applications, profiles, the
-   `project_board` view) and `003-signup.sql` (self-service sign-up).
+   `project_board` view), `003-signup.sql` (self-service sign-up) and
+   `004-invoices.sql` (the third invoice direction).
    Read the warning at the top of 003 before running it: sign-up metadata
    comes from the browser, and the role clamp in that trigger is what stops
    someone signing themselves up as ops.
@@ -122,16 +123,24 @@ including the hash route the link should land on.
 This gets the approval loop onto real infrastructure. It does not finish v1.
 Remaining, in the spec's own order:
 
-- **Step 4 — invoices, both directions, as PDFs.** The VAT question is now
-  answered: all rates are ex VAT, and the €2/hour deduction carries its own
-  21%, which makes it a supply rather than a discount. `computeFees()` already
-  returns every figure a template needs.
+- **Step 4 — invoices, as PDFs.** The VAT questions are answered: all rates are
+  ex VAT, the €2/hour fee carries its own 21% and is therefore a supply rather
+  than a discount, and a settled month produces **three** documents, two of
+  which net only in payment. `buildInvoiceSet()` already constructs all three,
+  with tests asserting they equal the figures the freelancer approved.
 
-  One question remains and it shapes the templates: **one document or two.**
-  A self-billed invoice is the freelancer's sales invoice; the platform's fee
-  belongs on the platform's own invoice, not as a negative line on theirs. See
-  docs/open-items.md item 2. Settle that with the accountant, then generate in
-  an edge function and store in Supabase Storage, never in the browser.
+  What is left for this step:
+
+  1. **Invoice numbering.** Still unanswered and genuinely blocking — a
+     self-billed invoice carries the *freelancer's* sequence, not the
+     platform's. See docs/open-items.md item 2b before writing any of it.
+  2. **Fill in `CONFIG.platform`.** Name, KvK, BTW number, address. Empty
+     today, and `buildInvoiceSet` refuses to produce a document without them.
+  3. **Render and number server-side.** An edge function calling
+     `buildInvoiceSet`, a PDF renderer, storage in Supabase Storage. Numbers
+     are allocated in Postgres, not in the browser; a browser that can mint a
+     number can mint two invoices with the same one.
+  4. **Wire the `approved → invoiced` transition**, which nothing fires yet.
 - **Step 5 — the seven emails.** An edge function plus a transactional sender.
   Seven. Adding an eighth means removing one.
 - **Step 6 — additional charges.** The table and the separate approve/reject
