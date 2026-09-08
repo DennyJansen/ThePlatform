@@ -39,23 +39,27 @@ the adapter methods, flip one flag in `src/config.js`.
    comes from the browser, and the role clamp in that trigger is what stops
    someone signing themselves up as ops.
 
-   **006 is not optional and it is not cleanup.** Among other things it
-   repairs `hire_applicant`, which has referenced three columns that 004
-   dropped ever since 004 was written. Running 001–005 and stopping gives you
-   a database where hiring fails on the first attempt with "column does not
-   exist". Nothing warns you: a plpgsql body is not checked until it runs.
+   **006 is not optional and it is not cleanup.** It repairs `hire_applicant`,
+   `submit_period` and `approve_period`, all three of which read columns 004
+   drops. Stopping at 005 gives you a database where submitting a timesheet
+   fails with `record "asg" has no field "client_rate_per_hour"` — that is the
+   entire v1 loop. Nothing warns you: a `plpgsql` body is not checked until it
+   runs.
 
-### Expect the first run to fail somewhere
+### This sequence has been run
 
-Everything in this directory was written against the schema rather than
-against a running Postgres. Nothing here has ever been executed. The failures
-to expect are the boring kind — a column order, a missing cast, an enum value
-added in the same transaction it is used in (Postgres refuses that; if
-`alter type ... add value` bites, run it in its own statement first).
+All seven files applied cleanly to a fresh EU project. It took three fixes to
+get there, all of them ordering, and all three are now in the files:
 
-Work through them in order and keep the fixes in the migration files rather
-than in the SQL editor, or the next environment starts from the same place
-this one did.
+- 002 added an enum value and used it in the same transaction → split into
+  `002a`.
+- 004 dropped `projects.freelancer_rate_per_hour` before dropping the view
+  that selects it → the view now comes down first and goes back up last.
+- Three functions read columns 004 drops → repaired in 006.
+
+If a run does fail, keep the fix in the migration file rather than in the SQL
+editor. A database repaired by hand is one the next environment cannot
+reproduce, which is the entire reason these are files.
 
 The file creates the tables, the constraints that encode the spec's rules, the
 row-level security policies, and three security-definer functions —

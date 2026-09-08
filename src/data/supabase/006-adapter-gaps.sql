@@ -7,10 +7,10 @@
 -- has to make and could not. They are grouped in one migration because they
 -- were all found the same way, and because none of them is useful alone.
 --
--- One of them is a straight bug: 004 dropped the columns hire_applicant
--- writes to and did not update the function, so hiring has been broken since
--- that migration was written. Nobody noticed because none of these have ever
--- been run.
+-- THREE of them are one straight bug: 004 dropped columns that hire_applicant,
+-- submit_period and approve_period all still read, so hiring, submitting and
+-- approving have been broken since that migration was written. Nobody noticed
+-- because none of these had ever been run.
 --
 -- THE PATTERN WORTH SEEING. The v1 policies were written for the timesheet
 -- flows, where every reader is a party to the assignment. The marketplace
