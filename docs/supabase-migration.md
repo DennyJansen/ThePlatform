@@ -13,14 +13,34 @@ the adapter methods, flip one flag in `src/config.js`.
 1. Create a Supabase project in an EU region — the data is Dutch personal and
    financial data and there is no reason for it to leave the EU.
 2. Run `src/data/supabase/schema.sql` in the SQL editor, once, whole.
-   Then `002-marketplace.sql` (projects, applications, profiles, the
-   `project_board` view), `003-signup.sql` (self-service sign-up) and
-   `004-agreed-rate.sql` (one agreed rate, two fees) and
-   `005-membership-and-kvk.sql` (organisation membership, KvK on both sides).
+   Then, **in order, no skipping**:
+   `002-marketplace.sql` (projects, applications, profiles, the
+   `project_board` view), `003-signup.sql` (self-service sign-up),
+   `004-agreed-rate.sql` (one agreed rate, two fees),
+   `005-membership-and-kvk.sql` (organisation membership, KvK on both sides),
+   `006-adapter-gaps.sql` (what writing the adapter turned up).
 
    Read the warning at the top of 003 before running it: sign-up metadata
    comes from the browser, and the role clamp in that trigger is what stops
    someone signing themselves up as ops.
+
+   **006 is not optional and it is not cleanup.** Among other things it
+   repairs `hire_applicant`, which has referenced three columns that 004
+   dropped ever since 004 was written. Running 001–005 and stopping gives you
+   a database where hiring fails on the first attempt with "column does not
+   exist". Nothing warns you: a plpgsql body is not checked until it runs.
+
+### Expect the first run to fail somewhere
+
+Everything in this directory was written against the schema rather than
+against a running Postgres. Nothing here has ever been executed. The failures
+to expect are the boring kind — a column order, a missing cast, an enum value
+added in the same transaction it is used in (Postgres refuses that; if
+`alter type ... add value` bites, run it in its own statement first).
+
+Work through them in order and keep the fixes in the migration files rather
+than in the SQL editor, or the next environment starts from the same place
+this one did.
 
 The file creates the tables, the constraints that encode the spec's rules, the
 row-level security policies, and three security-definer functions —
@@ -64,43 +84,59 @@ There is no ops UI in v1, by design (spec §1). Use the table editor:
    derived. The `rates_coherent` constraint refuses an incoherent set.
 4. Leave `auto_approve_enabled` false (spec §7).
 
-## 3. Implement the adapter
+## 3. The adapter
 
-`src/data/supabase/supabaseAdapter.js` is a skeleton whose every method
-currently rejects with `error.backend_not_implemented`. The file header lists
-the mapping. In short:
-
-| Port method | Implementation |
-|---|---|
-| `requestMagicLink` | `auth.signInWithOtp({ email })` → return `{ delivery: 'email' }` and **no token** |
-| `consumeMagicLink` | not called — Supabase handles the redirect; `getSession` picks it up |
-| `getSession` / `signOut` | `auth.getSession()` / `auth.signOut()` |
-| `listAssignments` / `getAssignment` | plain selects; RLS does the scoping |
-| `openPeriod` / `getPeriod` / `listPeriods` | selects, joined into the same `PeriodView` shape the mock returns |
-| `listAwaitingDecision` | select where `status = 'submitted'` |
-| `saveDraft` | delete + insert on `time_entries` in one transaction |
-| `submitPeriod` / `approvePeriod` / `rejectPeriod` | `rpc('submit_period', …)` etc. |
-| `listAuditEvents` | plain select |
-
-Two things to get right:
-
-- **Return the same `PeriodView` shape.** The screens depend on it. The
-  `summary` field must be built with `buildSubmissionSummary` from
-  `src/domain/rules.js`, not recomputed, so the frontend and the SQL agree by
-  construction rather than by coincidence.
-- **Map Postgres errors to domain codes.** The SQL functions raise
-  `error.not_authorised`, `error.illegal_transition`, `error.no_hours`,
-  `error.comment_required`. Those strings are already the `ERROR` codes in
-  `rules.js`, so the mapping is: read `err.message`, and if it starts with
-  `error.`, wrap it in a `DomainError` with that code. The UI then translates it
-  with no further work.
-
-The client loads from a pinned CDN build — there is no bundler:
+`src/data/supabase/supabaseAdapter.js` is written. All 35 port methods, against
+a pinned CDN build of supabase-js — there is no bundler:
 
 ```js
 const { createClient } = await import(
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
 ```
+
+It has never talked to a database. Read it as a first draft that has been
+checked for internal consistency and nothing else.
+
+The shape, if you are changing it:
+
+| Port method | Implementation |
+|---|---|
+| `requestMagicLink` | `auth.signInWithOtp`, `shouldCreateUser: false` → `{ delivery: 'email' }` and **no token** |
+| `consumeMagicLink` | not called — Supabase consumes the redirect before the app boots |
+| `signUpFreelancer` / `signUpCompany` | `signInWithOtp` with `shouldCreateUser: true` and metadata the trigger reads |
+| `getSession` / `signOut` | `auth.getSession()` / `auth.signOut()` |
+| `listAssignments` / `getAssignment` | plain selects; RLS does the scoping |
+| `openPeriod` | `rpc('open_period', …)` — there is no insert policy, by design |
+| `getPeriod` / `listPeriods` | selects, joined into the `PeriodView` the mock returns |
+| `saveDraft` | delete + insert on `time_entries`; the one direct browser write |
+| `submitPeriod` / `approvePeriod` / `rejectPeriod` | `rpc(…)` into the definer functions |
+| `listAuditEvents` | `rpc('audit_for_assignment')` — a join cannot read the other party's name |
+| `listMyApplications` / `listApplicationsForProject` | `rpc(…)`, same reason |
+| `setOutreachConsent` | `rpc('set_outreach_consent')` — no update policy on `app_users` |
+
+Three things to keep right if you touch it:
+
+- **Return the same shapes the mock does.** The screens depend on them. The
+  `summary` field is built with `buildSubmissionSummary` from
+  `src/domain/rules.js`, not recomputed, so the frontend and the SQL agree by
+  construction rather than by coincidence. Totals go through `clientRate` for
+  the same reason.
+- **Map Postgres errors to domain codes.** The SQL functions raise
+  `error.not_authorised`, `error.illegal_transition`, `error.no_hours`,
+  `error.comment_required`. Those strings are already the `ERROR` codes in
+  `rules.js`, so the mapping is: read `err.message`, and if it contains an
+  `error.` code, wrap it in a `DomainError`. The UI translates it with no
+  further work.
+- **Never set a status directly.** One exception exists — project transitions,
+  because `company_writes_own_projects` is a `for all` policy — and 006 adds a
+  trigger so the database still decides which moves are legal. A test asserts
+  there is exactly one such write in the file.
+
+`src/test/supabase.js` checks that the adapter and the migrations agree about
+what exists: every table, view and function named in the adapter is looked for
+in the SQL. It cannot tell you whether a policy allows a read or whether a
+function body compiles — only a real database can — but it catches the class of
+mistake where the two files drift a week apart.
 
 ## 4. Flip the flag
 

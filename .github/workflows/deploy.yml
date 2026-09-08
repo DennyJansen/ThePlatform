@@ -132,6 +132,16 @@ jobs:
           for (const err of errors) console.error('Page error:', err);
 
           console.log(`${results.passed} passed, ${results.failed} failed`);
+
+          // Also write it to the run summary. Logs need a sign-in to read;
+          // the summary does not, and "did the suite actually run" is the
+          // first question anyone asks about a job that finished in 17s.
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            const mark = results.failed === 0 ? '✅' : '❌';
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              `${mark} **${results.passed} passed, ${results.failed} failed**\n\n`
+              + failures.map((f) => `- ${f}\n`).join(''));
+          }
           await browser.close();
           server.close();
           process.exit(results.failed === 0 && errors.length === 0 ? 0 : 1);
