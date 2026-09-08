@@ -66,6 +66,7 @@ export const ERROR = Object.freeze({
   // see the note on requestMagicLink in the Supabase adapter.
   LINK_RATE_LIMITED: 'error.link_rate_limited',
   LINK_SEND_FAILED: 'error.link_send_failed',
+  SIGNUP_FAILED: 'error.signup_failed',
 });
 
 /* ------------------------------------------------------------------ *

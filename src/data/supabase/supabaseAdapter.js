@@ -1,16 +1,26 @@
 /**
  * Supabase implementation of the data port.
  *
- * NOT YET RUN AGAINST A REAL DATABASE. Neither this file nor the six
- * migrations it depends on have been executed. Both were written from the same
- * schema, which means the first push will find mistakes in one or the other.
- * Expect a short fix loop rather than a clean start; read
- * docs/supabase-migration.md before you begin.
+ * Live since 8 September 2026. The eight migrations are applied, sign-up and
+ * sign-in work end to end, and the screens above this file did not change by
+ * one line to get there — which was the whole bet the data port was making.
  *
- * Writing this file is what turned up 006-adapter-gaps.sql — six calls the
- * adapter had to make and could not, including a hire path that 004 had
- * silently broken. That is the useful part of writing a second adapter: the
- * first one can quietly assume things the schema never promised.
+ * The bugs this file has actually produced, since they say more than the
+ * design notes do:
+ *
+ *   * Six readers returned [] when signed out, where the mock refuses. RLS
+ *     cannot tell "you may see nothing" from "there is nothing", so every
+ *     reader now establishes a session first.
+ *   * requestMagicLink swallowed every error to avoid an enumeration oracle
+ *     that Supabase's public auth endpoint hands out anyway. It reported
+ *     "check your email" for messages that were never sent.
+ *   * Sign-up reported "not found" on a rate limit, because auth failures
+ *     were going through toDomainError, whose NOT_FOUND fallback is right for
+ *     a read and meaningless here.
+ *
+ * All three are the same mistake: assuming a layer below would refuse the way
+ * the mock refuses. It refuses differently, and the difference reaches the
+ * user.
  *
  * Three rules this file follows, and the reasons matter more than the code:
  *
@@ -76,6 +86,41 @@ function toDomainError(error, fallback = ERROR.NOT_FOUND) {
   if (error.code === '42501') return new DomainError(ERROR.NOT_AUTHORISED, message);
   if (error.code === 'PGRST116') return new DomainError(ERROR.NOT_FOUND, message);
   if (error.code === '23505') return new DomainError(MARKET_ERROR.ALREADY_APPLIED, message);
+
+  return new DomainError(fallback, message);
+}
+
+/**
+ * Auth errors are their own shape and need their own mapping.
+ *
+ * toDomainError() falls back to NOT_FOUND, which is right for a PostgREST
+ * read — an unreadable row and a missing row are the same answer — and badly
+ * wrong here. A rate-limited sign-up matches none of its patterns and so
+ * reported "niet gevonden" to somebody creating an account, which is both
+ * untrue and unactionable. Auth failures get read on their status code first.
+ *
+ * @param {object} error         the AuthError from supabase-js
+ * @param {string} fallback      code to use when nothing else fits
+ * @param {boolean} quietOn4xx   true for sign-IN, where a 400/422 means "no
+ *                               such account" and saying so would answer a
+ *                               question the form should not answer
+ * @returns {DomainError|null}   null means "carry on as if it worked"
+ */
+function toAuthError(error, fallback, quietOn4xx = false) {
+  if (!error) return null;
+
+  const message = String(error.message || error.error_description || '');
+  const status = error.status || 0;
+
+  // A trigger that raised `error.xxx` — kvk_invalid is the one that fires in
+  // practice. The code is already a domain code; pass it straight through so
+  // the person sees what is actually wrong with their input.
+  const embedded = message.match(/error\.[a-z_]+/);
+  if (embedded) return new DomainError(embedded[0], message);
+
+  if (status === 429) return new DomainError(ERROR.LINK_RATE_LIMITED, message);
+  if (status >= 500) return new DomainError(ERROR.LINK_SEND_FAILED, message);
+  if (status >= 400 && quietOn4xx) return null;
 
   return new DomainError(fallback, message);
 }
@@ -316,17 +361,11 @@ export async function createSupabaseAdapter(settings) {
         options: { shouldCreateUser: false, emailRedirectTo: redirectTo() },
       });
 
-      if (error) {
-        const status = error.status || 0;
-        if (status === 429) {
-          throw new DomainError(ERROR.LINK_RATE_LIMITED, error.message);
-        }
-        if (status >= 500) {
-          throw new DomainError(ERROR.LINK_SEND_FAILED, error.message);
-        }
-        // 400 / 422: "no account for this address". Left silent — this is the
-        // one case where saying nothing is worth more than being helpful.
-      }
+      // quietOn4xx: a 400/422 here is "no account for this address", and that
+      // is the one case where saying nothing is worth more than being helpful.
+      const mapped = toAuthError(error, ERROR.LINK_SEND_FAILED, true);
+      if (mapped) throw mapped;
+
       return { delivery: 'email', email: address, token: null, expires_at: null };
     },
 
@@ -364,7 +403,12 @@ export async function createSupabaseAdapter(settings) {
           },
         },
       });
-      if (error) throw toDomainError(error);
+      // Sign-up says what went wrong. There is nothing to conceal here: a
+      // sign-up on an existing address is answered with a sign-in link and a
+      // 200, so an error is never "that account exists".
+      const mapped = toAuthError(error, ERROR.SIGNUP_FAILED);
+      if (mapped) throw mapped;
+
       return {
         delivery: 'email', email: address, token: null, expires_at: null,
         joined_existing: false, organization_name: null,
@@ -389,7 +433,9 @@ export async function createSupabaseAdapter(settings) {
           },
         },
       });
-      if (error) throw toDomainError(error);
+      const mapped = toAuthError(error, ERROR.SIGNUP_FAILED);
+      if (mapped) throw mapped;
+
       // Whether they joined an existing organisation is decided by the
       // trigger, after this returns — and saying so here would leak whether a
       // given KvK number is already on the platform. They find out on their
