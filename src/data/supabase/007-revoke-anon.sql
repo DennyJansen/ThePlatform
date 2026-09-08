@@ -71,14 +71,42 @@ revoke all on function audit_for_assignment(uuid)                       from ano
 revoke all on function my_applications()                                from anon;
 revoke all on function applications_for_project(uuid)                   from anon;
 
--- These are helpers the policies call, not endpoints. They run inside a
--- policy as the definer regardless of who the caller is, so revoking the
--- caller's EXECUTE does not break the policies that use them — it only stops
--- them being called directly over the API to probe for rows.
-revoke all on function is_ops()                                         from anon;
-revoke all on function is_party_to(uuid)                                from anon;
-revoke all on function is_company_admin_for(uuid)                       from anon;
-revoke all on function current_app_user()                               from anon;
+/* ---------------- the helpers are deliberately left alone ----------------
+ *
+ * is_ops(), is_party_to(), is_company_admin_for(), current_app_user() and
+ * is_live_application() stay callable by anon. That is a decision, not an
+ * oversight, and the first draft of this file got it wrong in an instructive
+ * way.
+ *
+ * The draft revoked them from anon. It had no effect, for the reason that is
+ * the mirror image of the project_board bug above: Postgres grants EXECUTE on
+ * every new function to PUBLIC by default. The eleven endpoint functions each
+ * carry an explicit `revoke ... from public` in their own migration, so
+ * naming anon finished the job. These five never did, so anon still reaches
+ * them through PUBLIC.
+ *
+ *   project_board:  revoked from PUBLIC, needed anon named too.
+ *   the helpers:    revoked from anon, needed PUBLIC named too.
+ *
+ * Both grants have to go. Which raises the question of whether they should.
+ *
+ * WHY THEY SHOULD NOT. An RLS policy expression is evaluated with the
+ * privileges of the querying role, not the policy owner. Every policy on
+ * projects, applications and freelancer_profiles calls is_company_admin_for;
+ * read_profiles calls is_live_application. Revoking EXECUTE from PUBLIC would
+ * therefore break those policies for `authenticated` as well, unless the same
+ * migration grants it straight back — and for anon it would turn a clean
+ * empty result into `permission denied for function`, on every table.
+ *
+ * What that buys: hiding two booleans that are false for anon by
+ * construction, and a row of nulls from current_app_user(). Nothing else.
+ * auth.uid() is null without a session, so each already answers "no".
+ *
+ * A worse trade than it looks at first glance, so it is not made. If it is
+ * ever revisited, the working form is `revoke from public` AND `revoke from
+ * anon` AND `grant execute to authenticated` — all three, or the policies
+ * stop working for everybody.
+ */
 
 /* ---------------- verify ----------------
  *
@@ -96,5 +124,15 @@ revoke all on function current_app_user()                               from ano
  *     -H "Content-Type: application/json" \
  *     -d '{"p_assignment":"00000000-0000-0000-0000-000000000000",
  *          "p_year":2026,"p_month":9}'
- *   -- expect 404 from PostgREST: the function is no longer in anon's schema
+ *   -- expect 401, code 42501, "permission denied for function open_period"
+ *
+ * Send the real argument names. A call with `{}` returns PGRST202 "searched
+ * for the function without parameters", which is PostgREST failing to match
+ * an overload and says nothing at all about privileges — it looks like proof
+ * and is not.
+ *
+ * Tables must still answer 200 with an empty list, not an error. If
+ * `projects` starts returning `permission denied for function
+ * is_company_admin_for`, somebody revoked a helper from PUBLIC; read the
+ * section above.
  */
