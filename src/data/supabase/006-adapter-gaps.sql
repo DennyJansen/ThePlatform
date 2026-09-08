@@ -134,6 +134,97 @@ begin
 end $fn$;
 
 /* ---------------------------------------------------------------------
+ * 2b. submit_period and approve_period, repaired
+ *
+ * The same breakage as hire_applicant, and worse, because these two are the
+ * approval loop itself. Both build their audit payload from
+ * asg.client_rate_per_hour and asg.freelancer_rate_per_hour, which 004
+ * dropped. Every submit and every approve would have failed at runtime with:
+ *
+ *   ERROR: record "asg" has no field "client_rate_per_hour"
+ *
+ * Found by grepping for the dropped columns rather than by running anything,
+ * which is the only way it could have been found: a plpgsql body is opaque to
+ * the dependency tracker, so DROP COLUMN succeeds and says nothing. The view
+ * project_board, by contrast, IS tracked — 004 could not drop the column out
+ * from under it, which is why that one failed loudly and these did not.
+ *
+ * The arithmetic moves to the agreed rate with the fees pointing outward:
+ *   client_total   = hours × (agreed + client fee)
+ *   freelancer_net = hours × (agreed − freelancer fee)
+ * The bodies are otherwise unchanged from schema.sql.
+ * ------------------------------------------------------------------- */
+create or replace function submit_period(p_period uuid) returns timesheet_periods
+language plpgsql security definer set search_path = public as $fn$
+declare
+  per timesheet_periods;
+  asg assignments;
+  total numeric;
+begin
+  select * into per from timesheet_periods where id = p_period for update;
+  if not found then raise exception 'error.not_found'; end if;
+  select * into asg from assignments where id = per.assignment_id;
+
+  if asg.freelancer_id <> auth.uid() and not is_ops() then
+    raise exception 'error.not_authorised';
+  end if;
+  if per.status <> 'draft' then
+    raise exception 'error.illegal_transition';
+  end if;
+
+  select coalesce(sum(hours), 0) into total from time_entries where period_id = p_period;
+  if total <= 0 then raise exception 'error.no_hours'; end if;
+
+  update timesheet_periods
+     set status = 'submitted', submitted_at = now()
+   where id = p_period
+  returning * into per;
+
+  perform log_audit(asg.id, 'TimesheetPeriod', p_period, 'period.submitted',
+    jsonb_build_object(
+      'version', per.version,
+      'total_hours', total,
+      'client_total', round(total * (asg.agreed_rate_per_hour + asg.client_fee_per_hour)),
+      'freelancer_net', round(total * (asg.agreed_rate_per_hour - asg.freelancer_fee_per_hour))
+    ));
+  return per;
+end $fn$;
+
+create or replace function approve_period(p_period uuid) returns timesheet_periods
+language plpgsql security definer set search_path = public as $fn$
+declare
+  per timesheet_periods;
+  asg assignments;
+  total numeric;
+begin
+  select * into per from timesheet_periods where id = p_period for update;
+  if not found then raise exception 'error.not_found'; end if;
+  select * into asg from assignments where id = per.assignment_id;
+
+  if not (is_ops() or (asg.approver_id = auth.uid()
+      and asg.organization_id = (select organization_id from app_users where id = auth.uid()))) then
+    raise exception 'error.not_authorised';
+  end if;
+  if per.status <> 'submitted' then raise exception 'error.illegal_transition'; end if;
+
+  select coalesce(sum(hours), 0) into total from time_entries where period_id = p_period;
+
+  update timesheet_periods
+     set status = 'approved', decided_at = now(), decided_by = auth.uid()
+   where id = p_period
+  returning * into per;
+
+  perform log_audit(asg.id, 'TimesheetPeriod', p_period, 'period.approved',
+    jsonb_build_object(
+      'version', per.version,
+      'total_hours', total,
+      'client_total', round(total * (asg.agreed_rate_per_hour + asg.client_fee_per_hour)),
+      'freelancer_net', round(total * (asg.agreed_rate_per_hour - asg.freelancer_fee_per_hour))
+    ));
+  return per;
+end $fn$;
+
+/* ---------------------------------------------------------------------
  * 3. set_outreach_consent
  *
  * There is no update policy on app_users, and there should not be a general

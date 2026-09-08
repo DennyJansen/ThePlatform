@@ -84,6 +84,34 @@ async function loadSource() {
   return source;
 }
 
+/**
+ * SQL with comments removed.
+ *
+ * These files explain themselves at length and quote the identifiers they are
+ * discussing. A test that searched the prose too would either fire on the
+ * documentation or force the documentation to dodge a regex, and both are the
+ * test shaping the wrong thing.
+ */
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '');
+}
+
+/**
+ * The final definition of every function, by name, keyed to its body.
+ *
+ * Matches the dollar-quoted body specifically rather than "everything up to
+ * the next function", so a slice can never swallow the unrelated SQL that
+ * sits between two definitions. Later files overwrite earlier ones, which is
+ * what `create or replace` means — so what comes out is what the database
+ * ends up with.
+ */
+function finalFunctionBodies(sqlText) {
+  const re = /create (?:or replace )?function (\w+)[\s\S]*?\$(\w*)\$([\s\S]*?)\$\2\$/g;
+  const bodies = new Map();
+  for (const m of sqlText.matchAll(re)) bodies.set(m[1], m[3]);
+  return bodies;
+}
+
 function namesIn(text, re) {
   const found = new Set();
   let m = re.exec(text);
@@ -203,15 +231,8 @@ describe('Supabase migrations — the invariants they exist to hold', () => {
     const db = await loadSql();
     const problems = [];
 
-    // Comments are stripped first. These files explain themselves at length
-    // and quote the values they are talking about; a test that forced the
-    // prose to avoid the word would be a test shaping the documentation.
-    const code = (text) => text
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/--[^\n]*/g, '');
-
     for (const file of db.files) {
-      const body = code(file.text);
+      const body = stripComments(file.text);
       const added = [...body.matchAll(
         /alter type \w+ add value (?:if not exists )?'(\w+)'/g,
       )].map((m) => m[1]);
@@ -225,6 +246,57 @@ describe('Supabase migrations — the invariants they exist to hold', () => {
       }
     }
     assert.deepEqual(problems, [], 'enum values must be committed before use');
+  });
+
+  it('leaves no function reading a column a migration dropped', async () => {
+    // The most expensive class of bug in this directory, and the one with no
+    // safety net. Postgres tracks view dependencies — 004 could not drop a
+    // column out from under project_board, and said so — but a plpgsql body
+    // is opaque to it. DROP COLUMN succeeds, the function keeps compiling,
+    // and it fails the first time somebody calls it.
+    //
+    // It has happened three times here: hire_applicant, submit_period and
+    // approve_period all kept reading client_rate_per_hour after 004 removed
+    // it. Two of those are the approval loop itself. Nothing complained,
+    // because nothing had been run.
+    const db = await loadSql();
+    const bodies = finalFunctionBodies(stripComments(db.text));
+    assert.ok(bodies.size > 0, 'expected to find some function bodies');
+
+    const problems = [];
+    for (const [name, body] of bodies) {
+      for (const column of db.dropped) {
+        if (new RegExp('\\b' + column + '\\b').test(body)) {
+          problems.push(name + ' still reads ' + column);
+        }
+      }
+    }
+    assert.deepEqual(problems, [], 'dropped columns are still referenced');
+  });
+
+  it('drops a view before dropping the columns it selects', async () => {
+    // 004 dropped projects.freelancer_rate_per_hour at line 71 and
+    // project_board, which selects it, at line 85. Postgres refuses:
+    //
+    //   ERROR: cannot drop column freelancer_rate_per_hour of table projects
+    //          because other objects depend on it
+    //
+    // Within one file, the dependent has to go first. This is a heuristic —
+    // it does not know which view selects which column — but the ordering it
+    // enforces is the safe one either way, and it is the ordering that was
+    // wrong.
+    const db = await loadSql();
+    const problems = [];
+
+    for (const file of db.files) {
+      const body = stripComments(file.text);
+      const view = body.search(/drop view/i);
+      const column = body.search(/drop column/i);
+      if (view !== -1 && column !== -1 && view > column) {
+        problems.push(file.name + ' drops a column before the view');
+      }
+    }
+    assert.deepEqual(problems, [], 'drop dependents before dependencies');
   });
 
   it('gives timesheet_periods no insert, update or delete policy', async () => {

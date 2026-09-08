@@ -18,6 +18,27 @@
 -- recognise, and the two rates that touch money are derived from it.
 -- =====================================================================
 
+/* ---------------- the board goes first ----------------
+ *
+ * project_board selects projects.freelancer_rate_per_hour, and Postgres
+ * refuses to drop a column a view depends on:
+ *
+ *   ERROR: cannot drop column freelancer_rate_per_hour of table projects
+ *          because other objects depend on it
+ *   DETAIL: view project_board depends on column freelancer_rate_per_hour
+ *
+ * So the view comes down before anything is dropped and goes back up at the
+ * bottom, over the new columns. `drop ... cascade` would also get past the
+ * error and is worse: it would silently take anything else that had come to
+ * depend on the view along with it.
+ *
+ * Note which way the safety net runs here. The view dependency is tracked, so
+ * this failed loudly. The three FUNCTIONS that read the same columns are not
+ * tracked at all — they kept compiling and would have failed on first call.
+ * See section 2 and 2b of 006-adapter-gaps.sql.
+ */
+drop view if exists project_board;
+
 /* ---------------- assignments ---------------- */
 
 alter table assignments
@@ -81,9 +102,10 @@ alter table projects
  * It is kept because it is the one door a freelancer has onto projects, and
  * the place a genuinely company-only column would have to be omitted from if
  * one is ever added. It is scaffolding now, not a control.
+ *
+ * The matching `drop view` is further up, before the column drops — see the
+ * note there for why it cannot live here.
  */
-drop view if exists project_board;
-
 create view project_board
 with (security_invoker = off) as
   select id, organization_id, title, description,
