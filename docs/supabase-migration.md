@@ -12,13 +12,28 @@ the adapter methods, flip one flag in `src/config.js`.
 
 1. Create a Supabase project in an EU region — the data is Dutch personal and
    financial data and there is no reason for it to leave the EU.
-2. Run `src/data/supabase/schema.sql` in the SQL editor, once, whole.
-   Then, **in order, no skipping**:
-   `002-marketplace.sql` (projects, applications, profiles, the
-   `project_board` view), `003-signup.sql` (self-service sign-up),
-   `004-agreed-rate.sql` (one agreed rate, two fees),
-   `005-membership-and-kvk.sql` (organisation membership, KvK on both sides),
-   `006-adapter-gaps.sql` (what writing the adapter turned up).
+2. Run the migrations in the SQL editor, **one query at a time, in this order,
+   each one whole**:
+
+   | # | File | What it does |
+   |---|---|---|
+   | 1 | `schema.sql` | tables, constraints, RLS, the three period transitions |
+   | 2 | `002a-enum-values.sql` | two enum values, alone — see below |
+   | 3 | `002-marketplace.sql` | projects, applications, profiles, `project_board` |
+   | 4 | `003-signup.sql` | self-service sign-up |
+   | 5 | `004-agreed-rate.sql` | one agreed rate, two fees |
+   | 6 | `005-membership-and-kvk.sql` | organisation membership, KvK on both sides |
+   | 7 | `006-adapter-gaps.sql` | what writing the adapter turned up |
+
+   **002a has to be its own run.** Postgres will not let you *use* a new enum
+   value in the same transaction that added it, and the SQL editor runs each
+   query as one transaction. Pasting 002a and 002 together fails with
+   `unsafe use of new value "company_admin" of enum type user_role`, and so
+   does pasting all of them into one query. Separate runs are separate
+   transactions; that is the whole fix.
+
+   A failed run rolls back completely, so there is no half-applied state to
+   clean up — fix the file and paste it again.
 
    Read the warning at the top of 003 before running it: sign-up metadata
    comes from the browser, and the role clamp in that trigger is what stops

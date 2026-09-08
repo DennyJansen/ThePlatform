@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Migration 002 — marketplace
--- Run after schema.sql, once, whole.
+-- Run after 002a-enum-values.sql, once, whole.
 --
 -- Spec §1 put "Matching / search / freelancer profiles" under "Explicitly not
 -- building", handled by Sourcer in a spreadsheet. That was reversed
@@ -27,18 +27,19 @@ create type project_status     as enum ('draft', 'open', 'closed', 'filled');
 create type application_status as enum ('submitted', 'screening', 'hired', 'rejected', 'withdrawn');
 create type remote_policy      as enum ('on_site', 'hybrid', 'remote');
 
--- app_users.role gains company_admin. Separate from approver on purpose: §2's
--- approver has one narrow power and the compliance story leans on that.
-alter type user_role add value if not exists 'company_admin';
-
+-- The two enum values this file depends on — 'company_admin' on user_role and
+-- 'pending' on assignment_state — are added by 002a-enum-values.sql, which
+-- MUST have been run first, as its own statement.
+--
+-- They cannot live here. Postgres refuses to use a new enum value in the same
+-- transaction that added it, and the constraint immediately below is such a
+-- use. See the header of 002a for the exact error.
 alter table app_users drop constraint if exists approver_has_org;
 alter table app_users
   add constraint org_roles_have_org
   check (role not in ('approver', 'company_admin') or organization_id is not null);
 
--- Assignments gain a pending state and a record of where they came from.
-alter type assignment_state add value if not exists 'pending';
-
+-- Assignments gain a record of where they came from.
 alter table assignments
   add column if not exists source_project_id     uuid,
   add column if not exists source_application_id uuid;

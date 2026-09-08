@@ -27,6 +27,7 @@ import { createSupabaseAdapter } from '../data/supabase/supabaseAdapter.js';
 
 const MIGRATIONS = [
   'schema.sql',
+  '002a-enum-values.sql',
   '002-marketplace.sql',
   '003-signup.sql',
   '004-agreed-rate.sql',
@@ -61,6 +62,7 @@ async function loadSql() {
 
   sql = {
     text: all,
+    files: MIGRATIONS.map((name, i) => ({ name, text: bodies[i] })),
     tables: collect(/create table (?:if not exists )?(\w+)/g),
     views: collect(/create view (\w+)/g),
     functions: collect(/create (?:or replace )?function (\w+)/g),
@@ -186,6 +188,43 @@ describe('Supabase migrations — the invariants they exist to hold', () => {
     assert.ok(granted.size > 0, 'expected some grants');
     assert.ok(!/grant execute on function [^;]*to public/i.test(db.text),
       'a security-definer function granted to public is granted to anonymous');
+  });
+
+  it('never adds an enum value and uses it in the same file', async () => {
+    // Postgres refuses to use a new enum value in the transaction that added
+    // it, and both the Supabase SQL editor and `supabase db push` run a file
+    // as one transaction. So a file that does both cannot succeed — ever, on
+    // any machine, however it is pasted.
+    //
+    // 002 did exactly this from the day it was written: it added
+    // 'company_admin' to user_role and then referenced it in a check
+    // constraint eleven lines later. It went unnoticed because nothing here
+    // had been run. Hence 002a-enum-values.sql, and hence this test.
+    const db = await loadSql();
+    const problems = [];
+
+    // Comments are stripped first. These files explain themselves at length
+    // and quote the values they are talking about; a test that forced the
+    // prose to avoid the word would be a test shaping the documentation.
+    const code = (text) => text
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/--[^\n]*/g, '');
+
+    for (const file of db.files) {
+      const body = code(file.text);
+      const added = [...body.matchAll(
+        /alter type \w+ add value (?:if not exists )?'(\w+)'/g,
+      )].map((m) => m[1]);
+
+      for (const value of added) {
+        // Any other quoted occurrence in the same file is a use of it.
+        const occurrences = (body.match(new RegExp("'" + value + "'", 'g')) || []).length;
+        if (occurrences > 1) {
+          problems.push(file.name + " adds and uses '" + value + "'");
+        }
+      }
+    }
+    assert.deepEqual(problems, [], 'enum values must be committed before use');
   });
 
   it('gives timesheet_periods no insert, update or delete policy', async () => {
