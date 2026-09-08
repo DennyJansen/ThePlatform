@@ -146,6 +146,12 @@ export function normaliseFreelancerSignup(input) {
     role: ROLE.FREELANCER,
     name: assertName(input.name),
     email: assertEmail(input.email),
+    // A freelancer on this platform is a registered business — they invoice,
+    // so they have a KvK number. Collecting it here is what makes the
+    // Handelsregister check possible at the door rather than after a
+    // placement, which is where the agency filter has to sit to be any use.
+    // See src/data/kvk.js.
+    kvk_number: assertKvk(input.kvk_number),
     // Spec §6: consent for outreach is captured at sign-up and defaults off.
     outreach_consent: input.outreach_consent === true,
   };

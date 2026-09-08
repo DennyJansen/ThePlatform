@@ -78,6 +78,15 @@ export async function createSupabaseAdapter(settings) {
      */
     signUpFreelancer: pending('signUpFreelancer'),
     signUpCompany: pending('signUpCompany'),
+
+    /**
+     * Membership. Under Supabase these are RLS-guarded updates to app_users:
+     * a pending member has no read policy on their own organisation's
+     * projects, so the gate is enforced in the database rather than by a
+     * screen choosing not to render.
+     */
+    listPendingMembers: pending('listPendingMembers'),
+    decideMember: pending('decideMember'),
     getSession: pending('getSession'),
     signOut: pending('signOut'),
 

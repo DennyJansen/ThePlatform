@@ -51,6 +51,25 @@ export const ASSIGNMENT_STATUS = Object.freeze({
   ENDED: 'ended',
 });
 
+/**
+ * Whether a company_admin may act for their organisation yet.
+ *
+ * The first person to register a KvK number becomes `active` — there is nobody
+ * to ask. Everyone after them arrives `pending` and an existing admin lets
+ * them in.
+ *
+ * This exists because KvK numbers are public. Without it, anyone who can read
+ * a competitor's KvK from their website footer can sign up, be silently added
+ * to their organisation, and read their projects and applicants. Matching on
+ * KvK is right for deciding *which* organisation someone belongs to; it is not
+ * evidence that they work there.
+ */
+export const MEMBERSHIP_STATUS = Object.freeze({
+  PENDING: 'pending',
+  ACTIVE: 'active',
+  DECLINED: 'declined',
+});
+
 /** A project pitched by a company on the marketplace. */
 export const PROJECT_STATUS = Object.freeze({
   DRAFT: 'draft',
@@ -173,7 +192,9 @@ export const AUDIT_ACTION = Object.freeze({
 
   ACCOUNT_CREATED: 'account.created',
   ORGANIZATION_CREATED: 'organization.created',
-  ORGANIZATION_JOINED: 'organization.joined',
+  ORGANIZATION_JOIN_REQUESTED: 'organization.join_requested',
+  ORGANIZATION_MEMBER_APPROVED: 'organization.member_approved',
+  ORGANIZATION_MEMBER_DECLINED: 'organization.member_declined',
 });
 
 /**

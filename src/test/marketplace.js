@@ -28,6 +28,8 @@ import {
   normaliseApplication, normaliseProfile, normaliseProject,
   normaliseScreeningInvite, profileIsComplete, projectForFreelancer,
   assertNoForbiddenProjectFields, assertNoForbiddenProfileFields,
+  assertCanManageMembers, assertMemberDecision, membershipIsActive,
+  membershipIsPending, PROFILE_VISIBLE_STATUSES,
 } from '../domain/marketplace.js';
 import {
   clientRate, freelancerRate, parseRateToCents,
@@ -36,6 +38,9 @@ import {
 import { createMockAdapter } from '../data/mock/mockAdapter.js';
 import { save, __testing } from '../data/mock/store.js';
 import { buildSeed } from '../data/mock/seed.js';
+import {
+  KVK_ERROR, verifyKvk, kvkCheckIsAvailable, looksLikeAgency, agencyMatches,
+} from '../data/kvk.js';
 
 /* ------------------------------------------------------------------ */
 
@@ -199,6 +204,64 @@ describe('Marketplace — who may do what', () => {
   });
 });
 
+describe('Organisation membership — a KvK match is a claim, not proof', () => {
+  const ACTIVE = { ...COMPANY, membership_status: 'active' };
+  const PENDING = { id: 'usr_p', role: ROLE.COMPANY_ADMIN, organization_id: 'org_1', membership_status: 'pending' };
+  const DECLINED = { id: 'usr_d', role: ROLE.COMPANY_ADMIN, organization_id: 'org_1', membership_status: 'declined' };
+
+  it('treats a missing membership field as active', () => {
+    // Accounts created before this rule existed must not be locked out.
+    assert.ok(membershipIsActive(COMPANY));
+    assert.ok(isCompanyAdminFor(COMPANY, 'org_1'));
+  });
+
+  it('gives a pending member nothing at all', () => {
+    assert.ok(membershipIsPending(PENDING));
+    assert.ok(!isCompanyAdminFor(PENDING, 'org_1'),
+      'a pending member belongs to the organisation but cannot act in it');
+  });
+
+  it('gives a declined member nothing either', () => {
+    assert.ok(!isCompanyAdminFor(DECLINED, 'org_1'));
+    assert.ok(!membershipIsPending(DECLINED), 'declined is decided, not waiting');
+  });
+
+  it('does not let a pending member manage a project', async () => {
+    const project = { id: 'p', organization_id: 'org_1', status: 'open' };
+    await assert.throws(() => assertCanManageProject(PENDING, project),
+      MARKET_ERROR.NOT_AUTHORISED,
+      'this is the hole: guess a public KvK number, read a competitor’s projects');
+  });
+
+  it('lets an active admin decide, and refuses everyone else', async () => {
+    assert.equal(assertMemberDecision(ACTIVE, PENDING, 'active'), 'active');
+    assert.equal(assertMemberDecision(ACTIVE, PENDING, 'declined'), 'declined');
+
+    await assert.throws(() => assertMemberDecision(PENDING, PENDING, 'active'),
+      MARKET_ERROR.NOT_AUTHORISED, 'nobody approves their own membership');
+    await assert.throws(
+      () => assertMemberDecision(OTHER_COMPANY, PENDING, 'active'),
+      MARKET_ERROR.NOT_AUTHORISED, 'another organisation has no say',
+    );
+    await assert.throws(() => assertMemberDecision(FREELANCER, PENDING, 'active'),
+      MARKET_ERROR.NOT_AUTHORISED);
+  });
+
+  it('refuses to decide a request twice', async () => {
+    await assert.throws(() => assertMemberDecision(ACTIVE, DECLINED, 'active'),
+      MARKET_ERROR.ILLEGAL_TRANSITION);
+    await assert.throws(() => assertMemberDecision(ACTIVE, ACTIVE, 'declined'),
+      MARKET_ERROR.NOT_AUTHORISED, 'and cannot be aimed at yourself either');
+  });
+
+  it('refuses a decision that is not one of the two', async () => {
+    await assert.throws(() => assertMemberDecision(ACTIVE, PENDING, 'pending'),
+      MARKET_ERROR.ILLEGAL_TRANSITION);
+    await assert.throws(() => assertMemberDecision(ACTIVE, PENDING, 'admin'),
+      MARKET_ERROR.ILLEGAL_TRANSITION);
+  });
+});
+
 describe('Compliance §6 — profiles do not become a candidate database', () => {
   const owner = { id: 'usr_f', outreach_consent: false };
   const consenting = { id: 'usr_f2', outreach_consent: true };
@@ -208,8 +271,31 @@ describe('Compliance §6 — profiles do not become a candidate database', () =>
       MARKET_ERROR.PROFILE_NOT_VISIBLE);
   });
 
-  it('shows it once they have applied to that organisation', () => {
-    assertProfileVisibleTo(COMPANY, owner, [{ freelancer_id: 'usr_f' }]);
+  it('shows it while the application is live', () => {
+    for (const status of ['submitted', 'screening', 'hired']) {
+      assertProfileVisibleTo(COMPANY, owner, [{ freelancer_id: 'usr_f', status }]);
+    }
+  });
+
+  it('takes it away again once the application closes', async () => {
+    // A company that rejected someone in March should not still be reading
+    // their CV in November. Access follows the reason it was granted.
+    for (const status of ['rejected', 'withdrawn']) {
+      await assert.throws(
+        () => assertProfileVisibleTo(COMPANY, owner, [{ freelancer_id: 'usr_f', status }]),
+        MARKET_ERROR.PROFILE_NOT_VISIBLE,
+        'a ' + status + ' application must not keep the profile open',
+      );
+    }
+  });
+
+  it('keeps it open for a hire, because that is an ongoing relationship', () => {
+    assertProfileVisibleTo(COMPANY, owner, [{ freelancer_id: 'usr_f', status: 'hired' }]);
+  });
+
+  it('lists exactly the statuses that grant access', () => {
+    assert.deepEqual(PROFILE_VISIBLE_STATUSES.slice().sort(),
+      ['hired', 'screening', 'submitted']);
   });
 
   it('shows it when the freelancer opted in to being approached', () => {
@@ -638,5 +724,51 @@ describe('Marketplace loop — apply, screen, hire', () => {
     await signInAs(a, F);
     await assert.throws(() => a.saveProject(null, VALID_PROJECT), MARKET_ERROR.NOT_AUTHORISED);
     restoreSnapshot();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * KvK verification — honest about doing nothing, clear about the policy
+ * ------------------------------------------------------------------ */
+
+describe('KvK check — the agency filter', () => {
+  it('reports itself unavailable rather than pretending', async () => {
+    assert.equal(kvkCheckIsAvailable(), false);
+    const result = await verifyKvk('84213977');
+    assert.equal(result.available, false);
+    assert.equal(result.reason, KVK_ERROR.NOT_AVAILABLE);
+    assert.equal(result.kvk_number, '84213977', 'the number is kept for later');
+    assert.equal(result.found, undefined, 'and nothing is invented about it');
+  });
+
+  it('flags the SBI codes that mean "we place people for a living"', () => {
+    assert.ok(looksLikeAgency(['78201']), 'uitzendbureau');
+    assert.ok(looksLikeAgency(['78100']), 'arbeidsbemiddeling');
+    assert.ok(looksLikeAgency(['78202']), 'detachering');
+    assert.ok(looksLikeAgency(['78300']), 'payrolling');
+    assert.ok(looksLikeAgency(['41201', '78201']), 'one match anywhere is enough');
+  });
+
+  it('leaves ordinary registrations alone', () => {
+    assert.ok(!looksLikeAgency(['41201']), 'algemene burgerlijke utiliteitsbouw');
+    assert.ok(!looksLikeAgency(['71121']), 'ingenieurs en advies');
+    assert.ok(!looksLikeAgency([]));
+    assert.ok(!looksLikeAgency(null), 'no data is not a flag');
+    assert.ok(!looksLikeAgency(undefined));
+  });
+
+  it('says which codes matched, so a review can be told why', () => {
+    const matches = agencyMatches(['41201', '78201', '78300']);
+    assert.deepEqual(matches.map((m) => m.code), ['78201', '78300']);
+    assert.ok(matches[0].label.length > 0, 'a code alone means nothing to a person');
+    assert.deepEqual(agencyMatches(['41201']), []);
+  });
+
+  it('does not treat a flag as a rejection anywhere in this module', () => {
+    // A genuine ZZP interim manager sometimes carries 78100. The filter flags
+    // for review; refusing outright would lose real supply to a false
+    // positive, and that person never comes back to tell you.
+    assert.equal(typeof looksLikeAgency, 'function');
+    assert.equal(KVK_ERROR.LOOKS_LIKE_AGENCY, 'error.kvk_looks_like_agency');
   });
 });

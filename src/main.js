@@ -177,7 +177,7 @@ function registerRoutes() {
   route('/profile', guarded((main) => renderProfile(main, { adapter }),
     [ROLE.FREELANCER, ROLE.OPS]));
 
-  route('/company/projects', guarded((main) => renderCompanyProjects(main, { adapter }),
+  route('/company/projects', guarded((main) => renderCompanyProjects(main, { adapter, session }),
     [ROLE.COMPANY_ADMIN, ROLE.OPS]));
 
   // '/company/project/new' resolves here too: the form treats the id 'new' as

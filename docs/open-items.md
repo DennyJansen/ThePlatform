@@ -8,14 +8,21 @@ Nothing here is settled by having been implemented.
 
 ---
 
-### 1. Which side pays the per-assignment fixed fee (€250–500), and when
+### 1. The per-assignment fixed fee — ANSWERED
 
-**Default:** none. `assignments.fixed_fee_payer` is nullable and seeded `null`.
-C2 shows the amount followed by *"betaler nog niet vastgelegd"* rather than
-picking a side and displaying it as settled.
-**Change in:** the column's check constraint already allows `'client'` or
-`'freelancer'`; the label in `src/ui/screens/assignmentDetail.js` drops away
-once the value is set. Billing it is step 4 work.
+**Decided:** the **company** pays it, **when it opens the assignment**. It is a
+listing fee for putting work on the platform, not a placement fee — so it is
+charged whether or not a hire follows.
+
+Worth being deliberate about that last part, because it is the whole character
+of the fee. A company that posts, gets three unsuitable applicants and closes
+the project has still paid. That is defensible — you carried the matching cost
+either way — but it is the thing a company will query, so the terms should say
+it in one sentence rather than leaving it to be discovered.
+
+**Implemented:** `fixed_fee_payer` is `'client'`; `fixed_fee_charged_at` added
+in `005-membership-and-kvk.sql`. Charging it is not built — there is no
+payments module and invoicing is outside the platform (item 2b).
 
 ### 2. VAT treatment of the freelancer-side deduction
 
@@ -58,6 +65,21 @@ difference between a billing system and an approval tool.
 `invoiced` and `paid` stay as period statuses that ops sets against documents
 raised elsewhere — which is what §1 already said about payment.
 
+### 2d. What each fee is *for* — ANSWERED
+
+Worth writing down, because it is what you say when someone asks:
+
+| | | |
+|---|---|---|
+| €2/hour | freelancer | the contract and the system |
+| €5/hour | company | matching, the contract and the system |
+| fixed fee | company | opening the assignment on the platform |
+
+The two hourly fees are not the same fee split in two — they buy different
+things, and the €5 is larger because matching is the part you actually do.
+That is the sentence to have ready when a company compares notes with a
+freelancer, which they now can (see below).
+
 ### 2c. How the platform collects its fee — ANSWERED
 
 **Decided:** the platform is the middle man, with a contract on each side. One
@@ -99,29 +121,43 @@ and the freelancer's 95 was derived by subtracting a hidden spread. That model
 had no place to put the €2 once the platform stopped invoicing, and it hid a
 number from the freelancer that they are now meant to negotiate on.
 
-### 3. Payout timing versus client payment terms (spec §8.4)
+### 3. Payout timing versus client payment terms (§8.4) — ANSWERED
 
-**Default:** not modelled. `organizations.payment_terms_days` exists (30) for
-the client leg. There is no field for the platform→freelancer leg, because
-whether it *depends on* the first leg is precisely the unanswered question, and
-a field would imply an answer.
-**Note:** this determines working capital exposure. It is the most expensive
-item on this list to get wrong and the cheapest to decide.
+**Decided:** the platform pays the freelancer **when the client has paid**.
 
-### 4. Expense cap and receipt retention obligations
+This is the answer that costs you nothing in working capital and costs the
+freelancer their certainty, so it has to be in their contract in plain words —
+not implied by silence. A freelancer who assumes 30 days and discovers they are
+waiting on a client they have never met will not take a second placement.
 
-**Default:** not enforced. `additional_charges` exists in the schema with
-`receipt_file`; there is no cap and no retention rule.
-**Change in:** step 6, which is when charges get a UI at all.
+Two things follow that are not built and will be wanted:
 
-### 5. Partial months — mid-month start, mid-month end
+- The freelancer needs to **see where the money is**. "Approved, awaiting the
+  client" is a different state from "approved" and a different one again from
+  "paid". The period statuses already carry `invoiced` and `paid`; something
+  has to set them, and today nothing does.
+- A client who pays late is now the freelancer's problem as much as yours.
+  Whatever you do about that — chasing, a backstop after N days — is a
+  commercial decision, but the freelancer should know which it is.
 
-**Default:** handled. `withinAssignment()` bounds every entry by the
-assignment's `start_date`/`end_date`. Days outside the window render greyed and
-non-enterable, and the domain refuses an entry on one even if it arrives
-through a crafted payload.
-**Still open:** whether a partial first month should be pro-rated for anything
-other than hours — the fixed fee, for instance. See item 1.
+### 4. Expense cap and receipt retention — ANSWERED in mechanism
+
+**Decided:** the freelancer uploads the receipt, the company approves it. Which
+is exactly the flow §4/C1 already describes and the data model already carries
+(`additional_charges.receipt_file`, approve/reject separate from hours).
+
+**Still open, and small:** whether there is a cap above which a charge needs
+pre-agreement, and how long receipts are kept. Both belong with the CV
+retention question below rather than being answered separately.
+
+### 5. Partial months — ANSWERED
+
+**Decided:** pro-rate **hours only**. The fixed fee is charged when the
+assignment opens (item 1), so a mid-month start does not touch it.
+
+Already how it works: `withinAssignment()` bounds every entry by the
+assignment's dates, days outside render greyed and non-enterable, and the
+domain refuses an entry on one even through a crafted payload.
 
 ### 6. Hour rounding — decimal, quarter, or half
 
@@ -138,73 +174,131 @@ it matches a table we have; an explicit choice always wins and is remembered.
 **Invoices are raised outside the platform** (see item 2b), so nothing here
 governs their language any more.
 
-### 8. Approval window and whether silence constitutes approval (§7)
+### 8. Approval window — ANSWERED: silence never approves
 
-**Default:** reminder only, auto-approve off.
-`approval_window_days` is set (5) and `auto_approve_enabled` is `false`.
-The due date is computed and carried on the period view but **not displayed**,
-because nothing happens on that date yet. `due_date_is_binding` gates the UI on
-`auto_approve_enabled`, so enabling the clause turns the date on with it.
-**Change in:** one boolean, once the clause is in the signed terms.
+**Decided:** silence does **not** count as approval. `auto_approve_enabled`
+stays false permanently; the field and the scheduled job stay as scaffolding
+but must not be switched on.
+
+The due date therefore stays **hidden**, and that is not an oversight. Spec §7:
+*"Do not display a due date while nothing happens on that date. A deadline with
+no consequence teaches clients the deadline is decoration."* Reminders are
+still fine — an email at T-2 days is a nudge, not a deadline.
+
+What this costs you: an approver who ignores a submission blocks the
+freelancer's invoice indefinitely, and there is no automatic escape. That is
+the deliberate trade, and chasing is now an ops job rather than a code path.
 
 ### 9. Rejection procedure, termination, rate change (§8)
 
-**Default:** the code assumes these clauses exist as §8 describes them.
-**§8.1 (self-billing) is no longer among them** — see item 2b. The
-rejection path is built as: reject → the decided version is frozen → a
-pre-filled successor is created. If the signed terms describe a different
-correction path, this is the part that changes.
+**Rejection — built.** Reject → the decided version is frozen → a pre-filled
+successor is created. If the signed terms describe a different correction path,
+this is the part that changes.
+
+**§8.1 (self-billing) is no longer among them** — see item 2b.
+
+**Termination — ANSWERED: one calendar month, given before month end.** Notice
+served in September ends the assignment on 31 October; notice served on
+1 October ends it on 30 November.
+
+Not built, and worth knowing what that means. `assignments.end_date` exists and
+`withinAssignment()` already refuses hours outside it, so *recording* a
+termination works today — ops sets the date. What does not exist:
+
+- nothing calculates the date from a notice, so ops does the arithmetic and
+  ops can get it wrong;
+- nothing warns either party that a month is ending;
+- an assignment ending mid-period is fine (hours stop at `end_date`), but the
+  final month's approval still has to happen after the freelancer has gone,
+  and nobody is reminded of it.
+
+The last one is the one that bites: a placement ends, everyone moves on, and a
+month of approved hours sits unapproved because the approver stopped looking.
 
 ---
 
 
 ## Added by sign-up and CV import
 
-### CV retention and deletion
+### CV and profile retention — PARTLY ANSWERED
 
-**Default: not decided, and currently not urgent.** Only the filename is
-stored; the text is extracted in the browser and thrown away. That stops being
-true the moment the file goes into Supabase Storage, and at that point
-retention, deletion and access all need answers. See docs/compliance.md,
-"A CV is personal data, and now you hold it".
+**Decided:** a company loses access to a freelancer's profile **when the
+application closes**. Rejected or withdrawn ends it; submitted, screening and
+hired keep it open, because a hire is an ongoing relationship.
+
+**Implemented:** `PROFILE_VISIBLE_STATUSES` and `assertProfileVisibleTo()` in
+`src/domain/marketplace.js`, the `read_profiles` policy in
+`005-membership-and-kvk.sql`, and tests under "Compliance §6". A rejected
+application no longer keeps a CV readable, which is what stops a company
+assembling a candidate database one refusal at a time.
+
+**Still open:** how long the platform itself keeps a CV once an account goes
+quiet, and what deletion on request has to reach. Not urgent while only
+filenames are stored and the text never leaves the browser; urgent the day
+files go into Supabase Storage.
 
 ### Company website enrichment
 
 **Default: collected, not used.** The URL is stored on the organisation.
 Nothing fetches it, because a browser cannot. The edge function that will is
-sketched at the bottom of `src/data/enrichment.js`. Two things to decide before
-writing it: whether to respect `robots.txt` (recommended — these are companies
-you will have to talk to) and what to do when a site says nothing useful, which
-will be most of them.
+sketched at the bottom of `src/data/enrichment.js`.
+
+### Verifying KvK numbers, and keeping agencies out — DESIGNED, NOT BUILT
+
+**Decided:** both companies and freelancers give a KvK number at sign-up, and
+the goal is to keep recruitment agencies from signing up in order to approach
+the real parties.
+
+**Built now:** the number is collected on both sign-up forms, validated to
+eight digits, and stored. `src/data/kvk.js` holds the policy — which SBI codes
+mean "this registration places people for a living" — and the edge function
+sketch.
+
+**Not built:** the lookup itself. The Handelsregister API needs a key and sends
+no CORS headers, so it runs server-side or not at all. Same blocker as
+enrichment, same fix, same step.
+
+**Read `src/data/kvk.js` before relying on this.** SBI filtering raises the bar
+and does not close the door: an agency can register a second BV with a
+consultancy code and walk through. What it buys is the lazy majority, a factual
+reason to refuse that is not a judgement about a person, and evidence if
+someone evades it deliberately. It also has a false-positive edge — genuine ZZP
+interim managers sometimes carry 78100 — so **a match must flag for review, not
+auto-reject**. Losing a real freelancer to a silent signup failure costs more
+than letting one agency through.
 
 ### Whether a company sign-up should be reviewed
 
 **Default: no review.** Anyone with a valid-looking KvK number gets an account
-and can post projects immediately, and a second person with the same KvK joins
-automatically. That is right while the first placements are with companies you
-know, and wrong the first time someone posts a project that should not be on
-the board. There is no moderation queue and no report button.
+and can post immediately. The KvK check above is the intended gate; until it
+exists there is none. Fine while you know every company by name.
 
-### Whether joining an organisation should need approval
+### Joining an existing organisation — ANSWERED: an existing member approves
 
-**Default: automatic.** The second person with a matching KvK is added to the
-existing organisation without the first admin being asked. Convenient, and
-exactly what you would not want if someone guessed a KvK number to see a
-competitor's projects. KvK numbers are public.
+**Decided:** the first person to register a KvK number is active — there is
+nobody to ask. Everyone after them arrives **pending** and an existing active
+member lets them in or declines.
 
----
+This was a real hole, not a nicety. KvK numbers are printed on company
+websites. Before this, anyone who could read a competitor's footer could sign
+up, be silently added to their organisation, and read their projects and
+applicants.
 
-## Not from §10, but decided in code and worth revisiting
+A pending member gets one screen saying their request is with a colleague. They
+cannot list projects, read applicants, post, or approve themselves — that last
+check is in `assertMemberDecision` and has its own test, because it is the one
+that looks too obvious to write and is exactly the one that gets left out.
 
-**Session length.** 12 hours. Magic links: 24 hours, single use. Both are
-constants at the top of `src/data/mock/mockAdapter.js`; under Supabase they
-become project settings.
+**Implemented:** `MEMBERSHIP_STATUS`, `isCompanyAdminFor()` requiring active,
+`assertMemberDecision()`, the pending-requests panel on the company screen, and
+`005-membership-and-kvk.sql` — where the gate goes into `is_company_admin_for`,
+which every projects, applications and profiles policy already routes through,
+so it closes everywhere at once rather than policy by policy.
 
-**Unsaved hours.** The F2 grid does not autosave. There is a *Concept opslaan*
-button, an unsaved-changes indicator, and a browser warning before leaving with
-pending edits. Autosave was not built because a draft that saves itself while
-someone is mid-thought produces audit noise. If freelancers lose work anyway,
-that reasoning was wrong and it should change.
+**Worth knowing:** if the only active admin of an organisation leaves, nobody
+can approve anyone. Ops can fix it in the table editor. It will happen.
 
-**One approver, no delegation.** Spec §2, unchanged. The first holiday will
-test it.
+### Sourcer versus this platform — ANSWERED
+
+**Decided: one system.** This platform is authoritative for who is available
+and what is open. Nothing to keep in step with a spreadsheet.

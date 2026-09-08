@@ -15,6 +15,7 @@
 
 import {
   ROLE,
+  MEMBERSHIP_STATUS,
   PERIOD_STATUS,
   PROJECT_STATUS,
   APPLICATION_STATUS,
@@ -23,7 +24,10 @@ import {
 import {
   MARKET_ERROR,
   assertCanApply,
+  assertCanManageMembers,
   assertCanManageProject,
+  assertMemberDecision,
+  membershipIsPending,
   assertApplicationTransition,
   assertNotAlreadyApplied,
   assertProfileComplete,
@@ -103,6 +107,7 @@ function toSession(db, user) {
     name: user.name,
     role: user.role,
     organization_id: user.organization_id,
+    membership_status: user.membership_status || 'active',
     issued_at: db.session ? db.session.issued_at : new Date().toISOString(),
     expires_at: db.session ? db.session.expires_at : null,
   };
@@ -734,6 +739,10 @@ export function createMockAdapter() {
             name: fields.name,
             role: ROLE.FREELANCER,
             organization_id: null,
+            kvk_number: fields.kvk_number,
+            // Not verified against the Handelsregister in this build — that
+            // needs a server. See src/data/kvk.js.
+            kvk_verified_at: null,
             outreach_consent: fields.outreach_consent,
             created_at: new Date().toISOString(),
           };
@@ -776,12 +785,20 @@ export function createMockAdapter() {
             d.organizations.push(org);
           }
 
+          // The first person to register a KvK number is active — there is
+          // nobody to ask. Everyone after them waits for an existing admin.
+          // KvK numbers are public, so matching on one says which organisation
+          // someone claims, not that they work there.
           const user = {
             id: newId('usr'),
             email: fields.email,
             name: fields.name,
             role: ROLE.COMPANY_ADMIN,
             organization_id: org.id,
+            membership_status: joined
+              ? MEMBERSHIP_STATUS.PENDING
+              : MEMBERSHIP_STATUS.ACTIVE,
+            kvk_verified_at: null,
             outreach_consent: false,
             created_at: new Date().toISOString(),
           };
@@ -790,7 +807,9 @@ export function createMockAdapter() {
           appendAudit(d, user.id, null, 'User', user.id, AUDIT_ACTION.ACCOUNT_CREATED,
             { role: ROLE.COMPANY_ADMIN });
           appendAudit(d, user.id, null, 'Organization', org.id,
-            joined ? AUDIT_ACTION.ORGANIZATION_JOINED : AUDIT_ACTION.ORGANIZATION_CREATED,
+            joined
+              ? AUDIT_ACTION.ORGANIZATION_JOIN_REQUESTED
+              : AUDIT_ACTION.ORGANIZATION_CREATED,
             { kvk_number: org.kvk_number, name: org.name });
 
           return {
@@ -801,6 +820,58 @@ export function createMockAdapter() {
           };
         });
         return issueLink(result);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /* ---------------- Organisation membership ---------------- */
+
+    /**
+     * People waiting to be let into the caller's organisation.
+     *
+     * Only active admins see this, and only for their own organisation — the
+     * list is names and email addresses of people claiming to work somewhere,
+     * which is not something a pending member should be able to enumerate.
+     */
+    listPendingMembers() {
+      try {
+        const db = ensureSeeded();
+        const user = requireSession(db);
+        assertCanManageMembers(user, user.organization_id);
+
+        const rows = db.users
+          .filter((u) => u.organization_id === user.organization_id
+            && membershipIsPending(u))
+          .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+          .map((u) => ({
+            id: u.id, name: u.name, email: u.email, created_at: u.created_at,
+          }));
+        return later(rows);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+
+    /** decision: 'active' to let them in, 'declined' to refuse. */
+    decideMember(memberId, decision) {
+      try {
+        transact((d) => {
+          const user = requireSession(d);
+          const member = findUser(d, memberId);
+          const next = assertMemberDecision(user, member, decision);
+
+          member.membership_status = next;
+          member.membership_decided_at = new Date().toISOString();
+          member.membership_decided_by = user.id;
+
+          appendAudit(d, user.id, null, 'User', member.id,
+            next === MEMBERSHIP_STATUS.ACTIVE
+              ? AUDIT_ACTION.ORGANIZATION_MEMBER_APPROVED
+              : AUDIT_ACTION.ORGANIZATION_MEMBER_DECLINED,
+            { organization_id: member.organization_id });
+        });
+        return adapter.listPendingMembers();
       } catch (err) {
         return Promise.reject(err);
       }

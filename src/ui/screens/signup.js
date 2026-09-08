@@ -121,15 +121,20 @@ export function renderSignupForm(container, { adapter, kind, onSignedIn }) {
       placeholder: t('signin.email_placeholder'),
     });
 
-    // Company-only fields.
-    const companyName = textField({
-      id: 'su-company', label: t('signup.company_name'),
-    });
+    // Asked of both sides. A freelancer here is a registered business — they
+    // invoice, so they have a KvK number — and collecting it at the door is
+    // what makes a Handelsregister check possible before a placement rather
+    // than after one. See src/data/kvk.js.
     const kvk = textField({
       id: 'su-kvk',
       label: t('signup.kvk'),
-      help: t('signup.kvk_help'),
+      help: isCompany ? t('signup.kvk_help') : t('signup.kvk_help_freelancer'),
       inputmode: 'numeric',
+    });
+
+    // Company-only fields.
+    const companyName = textField({
+      id: 'su-company', label: t('signup.company_name'),
     });
     const vat = textField({
       id: 'su-vat', label: t('signup.vat'), placeholder: 'NL123456789B01',
@@ -170,6 +175,7 @@ export function renderSignupForm(container, { adapter, kind, onSignedIn }) {
           : await adapter.signUpFreelancer({
             name: name.input.value,
             email: email.input.value,
+            kvk_number: kvk.input.value,
             outreach_consent: consent.checked,
           });
         renderSent(result);
@@ -196,10 +202,11 @@ export function renderSignupForm(container, { adapter, kind, onSignedIn }) {
         name.field,
         email.field,
 
+        el('hr', { class: 'rule' }),
+        kvk.field,
+
         isCompany ? [
-          el('hr', { class: 'rule' }),
           companyName.field,
-          kvk.field,
           vat.field,
           website.field,
         ] : null,

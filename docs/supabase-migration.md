@@ -15,7 +15,8 @@ the adapter methods, flip one flag in `src/config.js`.
 2. Run `src/data/supabase/schema.sql` in the SQL editor, once, whole.
    Then `002-marketplace.sql` (projects, applications, profiles, the
    `project_board` view), `003-signup.sql` (self-service sign-up) and
-   `004-agreed-rate.sql` (one agreed rate, two fees).
+   `004-agreed-rate.sql` (one agreed rate, two fees) and
+   `005-membership-and-kvk.sql` (organisation membership, KvK on both sides).
 
    Read the warning at the top of 003 before running it: sign-up metadata
    comes from the browser, and the role clamp in that trigger is what stops

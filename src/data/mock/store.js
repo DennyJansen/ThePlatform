@@ -13,7 +13,7 @@
  */
 
 const STORAGE_KEY = 'platform.v1.db';
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 // Bumped whenever the stored shape changes: 2 for the marketplace tables, 3
 // when assignments moved to a single agreed rate. An older document is

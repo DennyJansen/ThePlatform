@@ -13,7 +13,8 @@
  */
 
 import {
-  ROLE, PERIOD_STATUS, PROJECT_STATUS, APPLICATION_STATUS, AUDIT_ACTION,
+  ROLE, MEMBERSHIP_STATUS, PERIOD_STATUS, PROJECT_STATUS, APPLICATION_STATUS,
+  AUDIT_ACTION,
 } from '../../domain/model.js';
 import { clientRate, DEFAULT_CLIENT_FEE, DEFAULT_FREELANCER_FEE } from '../../domain/money.js';
 import { currentPeriod, isoDate, monthDays, periodKey } from '../../domain/dates.js';
@@ -57,6 +58,8 @@ export function buildSeed(now = new Date()) {
     name: 'Sanne de Vries',
     role: ROLE.FREELANCER,
     organization_id: null,
+    kvk_number: '71234567',
+    kvk_verified_at: null,
     // Spec section 6: consent field exists now, outreach is not in v1 scope.
     outreach_consent: false,
     created_at: nowIso,
@@ -100,6 +103,7 @@ export function buildSeed(now = new Date()) {
     name: 'Marieke Vos',
     role: ROLE.COMPANY_ADMIN,
     organization_id: org.id,
+    membership_status: MEMBERSHIP_STATUS.ACTIVE,
     outreach_consent: false,
     created_at: nowIso,
   };
@@ -110,6 +114,7 @@ export function buildSeed(now = new Date()) {
     name: 'Ravi Menon',
     role: ROLE.COMPANY_ADMIN,
     organization_id: org2.id,
+    membership_status: MEMBERSHIP_STATUS.ACTIVE,
     outreach_consent: false,
     created_at: nowIso,
   };
@@ -127,9 +132,10 @@ export function buildSeed(now = new Date()) {
     client_fee_per_hour: DEFAULT_CLIENT_FEE,
     freelancer_fee_per_hour: DEFAULT_FREELANCER_FEE,
     fixed_fee_amount: 35000,
-    // Spec section 10 lists the payer of the fixed fee as unresolved. Null is
-    // the honest value; the UI shows it as undecided rather than guessing.
-    fixed_fee_payer: null,
+    // Spec section 10 item 1, answered: a listing fee, paid by the company.
+
+    // Decided: the company pays it, when it opens the assignment.
+    fixed_fee_payer: 'client',
     hour_increment: 0.25,
     start_date: isoDate(start.year, start.month, 1),
     end_date: null,
@@ -438,7 +444,7 @@ export function buildSeed(now = new Date()) {
   });
 
   return {
-    schema_version: 3,
+    schema_version: 4,
     organizations: [org, org2],
     users: [freelancer, approver, ops, companyAdmin, companyAdmin2],
     assignments: [assignment],

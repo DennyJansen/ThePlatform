@@ -14,6 +14,7 @@
 
 import {
   ROLE,
+  MEMBERSHIP_STATUS,
   PROJECT_STATUS,
   PROJECT_TRANSITIONS,
   PROJECT_TRANSITION_RESULT,
@@ -66,13 +67,65 @@ export const MAX_INDICATIVE_HOURS = 40;
  * Authorisation
  * ------------------------------------------------------------------ */
 
-/** True when the user may act commercially for this organisation. */
+/**
+ * True when the user may act commercially for this organisation.
+ *
+ * Membership must be `active`. A pending member — someone who signed up with a
+ * KvK number an organisation already uses — belongs to the organisation but
+ * cannot yet see or do anything in it. KvK numbers are public, so matching on
+ * one says which organisation a person claims; it does not say they work
+ * there. An existing admin decides that.
+ */
 export function isCompanyAdminFor(user, organizationId) {
   if (!user) return false;
   if (user.role === ROLE.OPS) return true;
   return user.role === ROLE.COMPANY_ADMIN
     && !!user.organization_id
-    && user.organization_id === organizationId;
+    && user.organization_id === organizationId
+    && membershipIsActive(user);
+}
+
+/**
+ * Membership defaults to active when the field is absent, so that accounts
+ * created before this rule existed are not locked out by a missing column.
+ */
+export function membershipIsActive(user) {
+  return !user || user.membership_status === undefined
+    ? true
+    : user.membership_status === MEMBERSHIP_STATUS.ACTIVE;
+}
+
+export function membershipIsPending(user) {
+  return !!user && user.membership_status === MEMBERSHIP_STATUS.PENDING;
+}
+
+/** Throws unless an active admin of the same organisation is asking. */
+export function assertCanManageMembers(user, organizationId) {
+  if (!isCompanyAdminFor(user, organizationId)) {
+    throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Not an active admin of this organisation');
+  }
+}
+
+/**
+ * Approving or declining someone's request to join.
+ *
+ * A member cannot decide their own request — the check looks obvious written
+ * down and is exactly the one that gets left out, at which point the whole
+ * mechanism is decoration.
+ */
+export function assertMemberDecision(actor, member, decision) {
+  if (!member) throw new DomainError(MARKET_ERROR.NOT_FOUND, 'No such member');
+  if (actor.id === member.id) {
+    throw new DomainError(MARKET_ERROR.NOT_AUTHORISED, 'Nobody approves their own membership');
+  }
+  assertCanManageMembers(actor, member.organization_id);
+  if (!membershipIsPending(member)) {
+    throw new DomainError(MARKET_ERROR.ILLEGAL_TRANSITION, 'That request is already decided');
+  }
+  if (decision !== MEMBERSHIP_STATUS.ACTIVE && decision !== MEMBERSHIP_STATUS.DECLINED) {
+    throw new DomainError(MARKET_ERROR.ILLEGAL_TRANSITION, 'Not a membership decision');
+  }
+  return decision;
 }
 
 export function assertCanManageProject(user, project) {
@@ -101,13 +154,33 @@ export function isVisibleOnBoard(project, user) {
 }
 
 /**
+ * Application statuses during which a company may still read the applicant's
+ * profile.
+ *
+ * `hired` is on the list because a placement is an ongoing relationship. The
+ * two that are absent are the point: once an application is **rejected** or
+ * **withdrawn**, the company's access to that profile ends. Access follows the
+ * reason it was granted, and when the reason is gone so is the access.
+ */
+export const PROFILE_VISIBLE_STATUSES = Object.freeze([
+  APPLICATION_STATUS.SUBMITTED,
+  APPLICATION_STATUS.SCREENING,
+  APPLICATION_STATUS.HIRED,
+]);
+
+/**
  * COMPLIANCE §6. A structured profile exists now, so this is the rule that
  * keeps it from becoming a searchable candidate database.
  *
- * A company may read a freelancer's profile only through an application that
- * freelancer chose to send it. `outreach_consent` is the single exception, and
- * it is the freelancer's to grant — it is what §6 means by "direct outreach
+ * A company may read a freelancer's profile only through a **live** application
+ * that freelancer chose to send it. `outreach_consent` is the single exception,
+ * and it is the freelancer's to grant — it is what §6 means by "direct outreach
  * based on profile data requires opt-in captured at signup".
+ *
+ * "Live" matters. A company that rejected someone in March should not still be
+ * reading their CV in November: nothing about the rejection entitles them to
+ * keep it, and a profile that stays readable forever after one application is
+ * a candidate database assembled one refusal at a time.
  *
  * There is no company-facing profile search anywhere in this build. If one is
  * ever added, it must filter on outreach_consent and this function is where
@@ -123,11 +196,12 @@ export function assertProfileVisibleTo(viewer, profileOwner, applications = []) 
   }
   if (profileOwner.outreach_consent === true) return;
 
-  const applied = applications.some((a) => a.freelancer_id === profileOwner.id);
-  if (!applied) {
+  const live = applications.some((a) => a.freelancer_id === profileOwner.id
+    && PROFILE_VISIBLE_STATUSES.includes(a.status));
+  if (!live) {
     throw new DomainError(
       MARKET_ERROR.PROFILE_NOT_VISIBLE,
-      'This freelancer has not applied to your organisation and has not opted in to being contacted',
+      'No live application from this freelancer, and no opt-in to being contacted',
     );
   }
 }

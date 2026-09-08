@@ -115,17 +115,19 @@ describe('Sign-up — field validation', () => {
   });
 
   it('builds a freelancer sign-up with consent off unless asked for', () => {
-    const a = normaliseFreelancerSignup({ name: 'Sanne de Vries', email: 'S@Example.NL' });
+    const a = normaliseFreelancerSignup({
+      name: 'Sanne de Vries', email: 'S@Example.NL', kvk_number: '71234567',
+    });
     assert.equal(a.role, ROLE.FREELANCER);
     assert.equal(a.email, 's@example.nl');
     assert.equal(a.outreach_consent, false, 'spec section 6: opt-in, not opt-out');
 
     const b = normaliseFreelancerSignup({
-      name: 'Sanne', email: 's@example.nl', outreach_consent: true,
+      name: 'Sanne', email: 's@example.nl', kvk_number: '71234567', outreach_consent: true,
     });
     assert.equal(b.outreach_consent, true);
     assert.equal(normaliseFreelancerSignup({
-      name: 'Sanne', email: 's@example.nl', outreach_consent: 'yes',
+      name: 'Sanne', email: 's@example.nl', kvk_number: '71234567', outreach_consent: 'yes',
     }).outreach_consent, false, 'only a real true counts as consent');
   });
 
@@ -423,7 +425,7 @@ describe('Sign-up — end to end', () => {
 
     const before = load().users.length;
     const result = await a.signUpFreelancer({
-      name: 'Nieuwe Freelancer', email: 'nieuw@example.com',
+      name: 'Nieuwe Freelancer', email: 'nieuw@example.com', kvk_number: '71234567',
     });
     assert.equal(load().users.length, before + 1);
 
@@ -439,8 +441,12 @@ describe('Sign-up — end to end', () => {
     saveSnapshot();
     const a = freshAdapter();
 
-    const fresh = await a.signUpFreelancer({ name: 'Iemand Nieuw', email: 'nieuw@example.com' });
-    const taken = await a.signUpFreelancer({ name: 'Iemand Anders', email: 'freelancer@example.com' });
+    const fresh = await a.signUpFreelancer({
+      name: 'Iemand Nieuw', email: 'nieuw@example.com', kvk_number: '71234567',
+    });
+    const taken = await a.signUpFreelancer({
+      name: 'Iemand Anders', email: 'freelancer@example.com', kvk_number: '71234567',
+    });
 
     assert.deepEqual(
       Object.keys(fresh).sort(),
@@ -462,7 +468,9 @@ describe('Sign-up — end to end', () => {
     saveSnapshot();
     const a = freshAdapter();
     const before = load().users.length;
-    await a.signUpFreelancer({ name: 'Iemand Anders', email: 'freelancer@example.com' });
+    await a.signUpFreelancer({
+      name: 'Iemand Anders', email: 'freelancer@example.com', kvk_number: '71234567',
+    });
     assert.equal(load().users.length, before, 'no duplicate account');
     restoreSnapshot();
   });
@@ -471,7 +479,7 @@ describe('Sign-up — end to end', () => {
     saveSnapshot();
     const a = freshAdapter();
     const result = await a.signUpFreelancer({
-      name: 'Niet Sanne', email: 'freelancer@example.com',
+      name: 'Niet Sanne', email: 'freelancer@example.com', kvk_number: '71234567',
     });
     const session = await a.consumeMagicLink(result.token);
     assert.equal(session.name, 'Sanne de Vries',

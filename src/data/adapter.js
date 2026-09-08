@@ -76,6 +76,8 @@ export const REQUIRED_METHODS = Object.freeze([
   // account and an existing one are indistinguishable from outside.
   'signUpFreelancer',
   'signUpCompany',
+  'listPendingMembers',
+  'decideMember',
   'getSession',
   'signOut',
   'listAssignments',

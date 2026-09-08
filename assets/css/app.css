@@ -984,3 +984,18 @@ select.input {
   border-bottom: 1px solid var(--border);
 }
 .fees__table tbody tr:first-child th { padding-top: 0.6rem; }
+
+/* People asking to join an organisation. Sits above the project list because
+   an unanswered request is someone locked out, and that should not be
+   something you scroll past. */
+.pending-members {
+  margin-bottom: 1.75rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+}
+.pending-members .section__title { color: var(--warn); margin-bottom: 0.25rem; }
+.pending-members .field__help { margin-bottom: 0.9rem; max-width: var(--measure); }
+.pending-members .card { border-color: var(--border-strong); }
+.pending-members .card__title { font-size: 1rem; }

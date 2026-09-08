@@ -32,21 +32,72 @@ import { navigate } from '../../app/router.js';
  * M5 — the company's project list
  * ------------------------------------------------------------------ */
 
-export async function renderCompanyProjects(container, { adapter }) {
+export async function renderCompanyProjects(container, { adapter, session }) {
+  // Someone who signed up against a KvK number an organisation already uses is
+  // in the organisation but not yet of it. They get one screen saying so
+  // rather than an empty project list, which would read as a bug.
+  if (session && session.membership_status === 'pending') {
+    clear(container);
+    append(container, [
+      el('h1', { class: 'screen__title' }, t('company.projects_title')),
+      notice('warn', t('member.pending_title'), t('member.pending_body')),
+    ]);
+    focusHeading(container);
+    return;
+  }
+
   await load();
 
   async function load() {
     clear(container);
     append(container, el('p', { class: 'loading' }, t('common.loading')));
     try {
-      draw(await adapter.listCompanyProjects());
+      draw(await adapter.listCompanyProjects(), await adapter.listPendingMembers());
     } catch (err) {
       clear(container);
       append(container, notice('error', null, tError(err)));
     }
   }
 
-  function draw(rows) {
+  /** Approve or decline one request to join, then redraw both lists. */
+  async function decideMember(member, decision) {
+    try {
+      await adapter.decideMember(member.id, decision);
+      announce(t(decision === 'active' ? 'member.approved' : 'member.declined'));
+      await load();
+    } catch (err) {
+      clear(container);
+      append(container, notice('error', null, tError(err)));
+    }
+  }
+
+  function pendingPanel(pending) {
+    if (!pending || pending.length === 0) return null;
+    return el('section', { class: 'pending-members' }, [
+      el('h2', { class: 'section__title' }, t('member.requests_title')),
+      el('p', { class: 'field__help' }, t('member.requests_body')),
+      el('ul', { class: 'card-list' }, pending.map((m) => el('li', { class: 'card' }, [
+        el('div', { class: 'card__body' }, [
+          el('p', { class: 'card__title' }, m.name),
+          el('p', { class: 'card__meta' }, m.email),
+        ]),
+        el('div', { class: 'card__actions' }, [
+          el('button', {
+            type: 'button',
+            class: 'btn btn--ghost btn--sm',
+            onclick: () => decideMember(m, 'declined'),
+          }, t('member.decline')),
+          el('button', {
+            type: 'button',
+            class: 'btn btn--primary btn--sm',
+            onclick: () => decideMember(m, 'active'),
+          }, t('member.approve')),
+        ]),
+      ]))),
+    ]);
+  }
+
+  function draw(rows, pending) {
     const locale = getIntlLocale();
     clear(container);
 
@@ -58,6 +109,7 @@ export async function renderCompanyProjects(container, { adapter }) {
     if (rows.length === 0) {
       append(container, [
         el('h1', { class: 'screen__title' }, t('company.projects_title')),
+        pendingPanel(pending),
         emptyState(t('company.empty_title'), t('company.empty_body'), newButton),
       ]);
       focusHeading(container);
@@ -80,6 +132,8 @@ export async function renderCompanyProjects(container, { adapter }) {
         el('h1', { class: 'screen__title' }, t('company.projects_title')),
         newButton,
       ]),
+
+      pendingPanel(pending),
 
       el('ul', { class: 'card-list' }, rows.map((p) => el('li', {
         class: 'card card--project',
