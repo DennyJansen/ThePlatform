@@ -32,10 +32,10 @@ export function freelancerFeeTable(summary) {
   const money = (cents) => formatMoney(cents, locale);
   const vatPercent = (summary.vat_rate_bp || 2100) / 100;
 
-  // The agreed rate, their own fee, what they invoice. The client fee is not
-  // here and must not be: it is the company's side of the arrangement, and
-  // showing a freelancer that the company pays €5 more invites a conversation
-  // about the €5 rather than about the work.
+  // The agreed rate, their own fee, what they invoice. The client fee is left
+  // out because it is not part of this calculation, not because it is a
+  // secret — the two parties are free to compare fees and the terms say what
+  // each pays. This table answers one question: what do I invoice.
   return el('div', { class: 'fees' }, [
     el('table', { class: 'table fees__table' }, [
       el('caption', { class: 'visually-hidden' }, t('f2.confirm_your_invoice')),
@@ -67,8 +67,8 @@ export function freelancerFeeTable(summary) {
 
 /**
  * The approver's view: the agreed rate, their own fee, what they are invoiced.
- * The mirror image of the freelancer's table — and just as deliberately, it
- * does not show the €2 the freelancer pays.
+ * The mirror image of the freelancer's table, and omits the freelancer's fee
+ * for the same reason — it is not part of this sum, not because it is hidden.
  */
 export function clientFeeTable(summary) {
   const locale = getIntlLocale();

@@ -234,18 +234,17 @@ export function assertProjectTransition(project, action) {
 }
 
 /**
- * What a freelancer is allowed to see of a project.
+ * What a freelancer is handed for a project.
  *
  * This used to strip the client's budget, back when a posting carried two
- * rates and the spread was hidden. It no longer does, because there is only
- * one rate on a posting — the agreed rate, which both sides are meant to see
- * and negotiate on. The fees live on the assignment and each side is shown
- * only its own.
+ * rates. It no longer does: a posting carries one agreed rate, which both
+ * sides are meant to see and negotiate on, and the fees are not confidential
+ * either — a freelancer and a company may compare what each pays.
  *
- * The function stays because `created_by` is still nobody's business, and
- * because the moment a posting acquires a field that is company-only, this is
- * where it gets removed — in the data layer, not in whichever template
- * happens to render it.
+ * The function stays because `created_by` is an internal reference rather than
+ * something a posting means to publish, and because the moment a posting does
+ * acquire a genuinely company-only field, this is where it gets removed — in
+ * the data layer, not in whichever template happens to render it.
  */
 export function projectForFreelancer(project) {
   if (!project) return null;

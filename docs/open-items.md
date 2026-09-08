@@ -76,7 +76,17 @@ agreed rate, and the two fees point outward from it:
 - Every figure is ex VAT. VAT applies to each side's own invoice: 21% of 93,
   21% of 100. Nothing is charged on the agreed rate, because nobody invoices it.
 
-**Each side sees the agreed rate and its own fee, never the other's.**
+**The fees are not confidential.** Each side's screens lead with its own fee
+because that is what it needs to act on — a freelancer checking a submission
+wants the number they will invoice — but a freelancer and a company are free to
+compare what each of them pays, and the terms say what that is. No screen, and
+no row-level policy, exists to keep one from finding out about the other.
+
+Worth knowing what that rules out: there is no version of this platform where
+you quote a company €100 and a freelancer €95 and rely on them not comparing.
+The margin has to survive both of them knowing it. It does — €7 on €95 is a
+defensible intermediation fee — but it is now a number you explain rather than
+a number you keep.
 
 **Implemented in:** `computeFees()`, `clientRate()` and `freelancerRate()` in
 `src/domain/money.js`; migration `004-agreed-rate.sql`. The stored field is

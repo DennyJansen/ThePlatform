@@ -107,16 +107,21 @@ differ by a fee — a pair that can drift, after which nobody can say what was
 agreed. There is a test asserting a project carries exactly one `*_rate_per_hour`
 field.
 
-**Each side sees the agreed rate and its own fee.** The freelancer's screens do
-not show the €5; the company's do not show the €2. Neither is a secret exactly,
-but neither is any of their business, and showing a freelancer that the company
-pays €5 more invites a conversation about the €5 rather than about the work.
+**Each side's screens lead with its own fee** — the freelancer's confirmation
+does not tot up the €5, the approver's does not tot up the €2 — because each
+table answers one question: what do I invoice, or what am I invoiced.
 
-This replaced an earlier model in which a posting carried a client budget and a
-derived freelancer rate, with the spread hidden. That needed a `project_board`
-view whose whole job was omitting a column. A posting now carries one rate that
-both sides are meant to see, so there is nothing to hide and nothing to forget
-to hide.
+**The fees are not confidential.** A freelancer and a company are free to
+compare what each of them pays, and the terms say so. Nothing in this codebase
+exists to keep one side from finding out about the other, and nothing should be
+built on the assumption that it does. If a screen would be clearer showing the
+whole picture, show it.
+
+That is a change from an earlier model, in which a posting carried a client
+budget and a derived freelancer rate with the spread deliberately hidden. It
+needed a `project_board` view whose entire job was omitting a column, and a
+`projectForFreelancer` that existed to strip one. Both survive in reduced form;
+neither is load-bearing any more.
 
 **The platform does not raise any invoice.** Decided after v1: the freelancer
 and the company each invoice from their own systems. So spec §8.1's

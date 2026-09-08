@@ -1,16 +1,15 @@
 /**
  * M1 / M2 — the project board and one project, for a freelancer.
  *
- * This is the marketplace screen spec §1 declined to build. It exists now by
- * a deliberate reversal, and the constraint that came with it is the rate:
- * every figure on this screen is the freelancer-side rate. The client's budget
- * never reaches the browser — the adapter strips it in projectForFreelancer,
- * not a template here, so a future screen cannot leak it by forgetting.
+ * This is the marketplace screen spec §1 declined to build. It exists now by a
+ * deliberate reversal.
  *
- * The €2/hour platform deduction IS disclosed, on the detail view. It is
- * already visible in the submit confirmation once someone is placed, and
- * finding out about it then rather than now is the kind of surprise that loses
- * you a freelancer.
+ * A posting carries one rate: the agreed rate. The detail view shows it and,
+ * beneath it, what the freelancer would actually invoice after the €2/hour
+ * platform fee — both, because the first is the number they negotiate on and
+ * the second is the number that reaches their bank. Finding out about the fee
+ * at submission time rather than before applying is the kind of surprise that
+ * loses you a freelancer.
  */
 
 import { el, clear, append, focusHeading, announce } from '../dom.js';

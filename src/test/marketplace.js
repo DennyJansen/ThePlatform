@@ -3,8 +3,10 @@
  *
  * Two things here are worth more than the rest and are tested hardest:
  *
- *  1. The client budget must never reach a freelancer. It is what §3's whole
- *     fee model depends on staying private.
+ *  1. A posting carries exactly one rate. Two stored rates that must differ by
+ *     a fee are a pair that can drift, and once they have, nobody can say what
+ *     was agreed. Not a confidentiality rule — the fees are open — an
+ *     integrity one.
  *  2. `indicative_hours_per_week` must never reach an Assignment. On a pitch it
  *     is commercial scope; on a live assignment it is an expected-hours field,
  *     which spec §6 forbids. The hire path is the one route by which it could
@@ -68,7 +70,7 @@ describe('Marketplace — one rate on a posting', () => {
     assert.equal(freelancerRate(p.agreed_rate_per_hour, DEFAULT_FREELANCER_FEE), 9300);
   });
 
-  it('shows a freelancer the agreed rate, and no company-only field', () => {
+  it('shows a freelancer the agreed rate, and no internal reference', () => {
     const stored = { id: 'prj_1', ...normaliseProject(VALID_PROJECT), created_by: 'usr_c' };
     const shown = projectForFreelancer(stored);
     assert.equal(shown.agreed_rate_per_hour, 9500, 'the agreed rate is theirs to see');
@@ -94,7 +96,7 @@ describe('Marketplace — one rate on a posting', () => {
 });
 
 describe('Marketplace — project validation', () => {
-  it('requires a title, a description a person can decide on, and a budget', async () => {
+  it('requires a title, a description a person can decide on, and a rate', async () => {
     await assert.throws(() => normaliseProject({ ...VALID_PROJECT, title: 'ab' }),
       MARKET_ERROR.TITLE_REQUIRED);
     await assert.throws(() => normaliseProject({ ...VALID_PROJECT, description: 'te kort' }),
@@ -105,7 +107,7 @@ describe('Marketplace — project validation', () => {
       MARKET_ERROR.START_DATE_REQUIRED);
   });
 
-  it('bounds the budget', async () => {
+  it('bounds the rate', async () => {
     await assert.throws(
       () => normaliseProject({ ...VALID_PROJECT, agreed_rate_per_hour: MIN_AGREED_RATE - 1 }),
       MARKET_ERROR.RATE_OUT_OF_RANGE,
@@ -432,7 +434,7 @@ const C1 = 'company@example.com';
 const C2 = 'company2@example.com';
 
 describe('Marketplace loop — apply, screen, hire', () => {
-  it('never puts the client budget in front of a freelancer', async () => {
+  it('hands a freelancer the agreed rate and no internal reference', async () => {
     saveSnapshot();
     const a = freshAdapter();
     await signInAs(a, F);
@@ -440,12 +442,12 @@ describe('Marketplace loop — apply, screen, hire', () => {
     const board = await a.listOpenProjects();
     assert.ok(board.length > 0, 'the board has something on it');
     for (const row of board) {
-      assert.equal(row.created_by, undefined, 'a company-only field leaked onto the board');
+      assert.equal(row.created_by, undefined, 'an internal reference reached the board');
       assert.ok(row.agreed_rate_per_hour > 0, 'the agreed rate is shown');
     }
 
     const view = await a.getProject(board[0].id);
-    assert.equal(view.project.created_by, undefined, 'a company-only field leaked onto detail');
+    assert.equal(view.project.created_by, undefined, 'an internal reference reached detail');
     assert.ok(view.project.agreed_rate_per_hour > 0);
 
     restoreSnapshot();

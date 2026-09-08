@@ -10,6 +10,11 @@
 --   * A company's budget is never readable by a freelancer. Freelancers get no
 --     select policy on `projects` at all — they read `project_board`, a view
 --     with no budget column in it. There is nothing to forget to omit.
+--
+--     SUPERSEDED BY 004-agreed-rate.sql. A posting now carries a single agreed
+--     rate that both sides are meant to see, and the platform's fees are not
+--     confidential either. `project_board` survives, but it no longer exists
+--     to conceal a column. Read 004 before reasoning about rates from here.
 --   * A profile is readable by a company only through an application that
 --     freelancer sent them, or if they opted in to being approached. That is
 --     §6's "direct outreach requires opt-in", in SQL.

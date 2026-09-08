@@ -3,13 +3,12 @@
  *
  * The form asks for the rate offered to the freelancer — the agreed rate, the
  * number both sides will recognise — and shows live what the company itself
- * will pay once the platform's fee is added. Two numbers, both the company's
- * business, neither hidden. A company that understands them is less likely to
- * argue about the invoice later.
+ * will pay once the platform's fee is added. A company that understands both
+ * numbers is less likely to argue about the invoice later.
  *
- * The freelancer's own fee is not shown here and should not be. Each side sees
- * the agreed rate and its own fee; what the other party pays the platform is
- * not part of their arrangement.
+ * The freelancer's own fee is left out because it is not part of what this
+ * form decides, not because it is confidential. The two parties may compare
+ * fees freely.
  *
  * COMPLIANCE §6. The description field's help text asks for the work and the
  * outcome, not the working hours, and the scope field says in as many words
@@ -183,13 +182,13 @@ export async function renderProjectForm(container, { adapter, projectId }) {
     multiline: true,
     rows: 8,
   });
-  const budget = textField({
-    id: 'f-budget',
-    label: t('form.budget'),
+  const agreedRate = textField({
+    id: 'f-rate',
+    label: t('form.rate'),
     value: p.agreed_rate_per_hour
       ? (p.agreed_rate_per_hour / 100).toFixed(2).replace('.', ',')
       : '',
-    help: t('form.budget_help'),
+    help: t('form.rate_help'),
     inputmode: 'decimal',
   });
   const start = textField({
@@ -232,21 +231,21 @@ export async function renderProjectForm(container, { adapter, projectId }) {
   // function the adapter uses, so the preview cannot disagree with the record.
   const derived = el('p', { class: 'derived' });
   function refreshDerived() {
-    const cents = parseRateToCents(budget.input.value);
+    const cents = parseRateToCents(agreedRate.input.value);
     derived.textContent = Number.isInteger(cents)
       ? t('form.derived', {
         amount: formatMoney(clientRate(cents, DEFAULT_CLIENT_FEE), locale),
       })
       : '';
   }
-  budget.input.addEventListener('input', refreshDerived);
+  agreedRate.input.addEventListener('input', refreshDerived);
   refreshDerived();
-  append(budget.field, derived);
+  append(agreedRate.field, derived);
 
   const statusSlot = el('div', { class: 'status-slot' });
 
   async function save(andPublish) {
-    const cents = parseRateToCents(budget.input.value);
+    const cents = parseRateToCents(agreedRate.input.value);
     try {
       const view = await adapter.saveProject(editing ? projectId : null, {
         title: title.input.value,
@@ -280,7 +279,7 @@ export async function renderProjectForm(container, { adapter, projectId }) {
     el('div', { class: 'form form--project' }, [
       title.field,
       description.field,
-      el('div', { class: 'field-row' }, [budget.field, start.field]),
+      el('div', { class: 'field-row' }, [agreedRate.field, start.field]),
       el('div', { class: 'field-row' }, [duration.field, hours.field]),
       el('div', { class: 'field-row' }, [location.field, remote.field]),
     ]),

@@ -74,10 +74,13 @@ alter table projects
 
 /* ---------------- the board ----------------
  *
- * The view no longer exists to hide a budget — a posting now carries one rate
- * and both sides are meant to see it. It is kept because it is the one door a
- * freelancer has onto projects, and the place any company-only column would
- * have to be omitted from if one is ever added.
+ * The view no longer exists to conceal anything. A posting carries one rate
+ * that both sides are meant to see, and the platform's fees are not
+ * confidential either — a freelancer and a company may compare what each pays.
+ *
+ * It is kept because it is the one door a freelancer has onto projects, and
+ * the place a genuinely company-only column would have to be omitted from if
+ * one is ever added. It is scaffolding now, not a control.
  */
 drop view if exists project_board;
 

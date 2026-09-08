@@ -43,9 +43,14 @@ export const MAX_HOURS_PER_DAY = 24;
  * the derived rates instead would let the anchor drift out of step with the
  * fees, and then nobody could say what was agreed.
  *
- * Each side sees the agreed rate and its OWN fee. The freelancer is not shown
- * the client fee; the company is not shown the freelancer's. Neither is a
- * secret exactly, but neither is any of their business.
+ * Each side's screens lead with its own fee, because that is what it needs to
+ * act on: a freelancer checking a submission wants the number they will
+ * invoice, not an arithmetic lesson about the other party.
+ *
+ * NOT because the fees are confidential. They are not. A freelancer and a
+ * company are free to compare notes, and the terms say what each pays. Nothing
+ * in this file exists to keep one side from finding out about the other, and
+ * nothing should be built on the assumption that it does.
  */
 
 /** Added to the agreed rate to reach what the company is invoiced. */
