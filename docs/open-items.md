@@ -302,3 +302,64 @@ can approve anyone. Ops can fix it in the table editor. It will happen.
 
 **Decided: one system.** This platform is authoritative for who is available
 and what is open. Nothing to keep in step with a spreadsheet.
+
+## Added by the Supabase adapter
+
+### The migrations have never been run — OPEN, and the largest unknown left
+
+Six SQL files, roughly 900 lines, written against the schema rather than
+against a running Postgres. Nothing in `src/data/supabase/` has ever been
+executed. The adapter has never opened a connection.
+
+That is not a small caveat and it should not be read as one. Everything else in
+this repository has been exercised in a browser, most of it in CI on every
+push. This part has been exercised by reading.
+
+**What is genuinely checked.** `src/test/supabase.js` compares the adapter
+against the SQL: every table, view and function the adapter names must exist
+somewhere in the migrations, no column it selects may have been dropped by a
+later migration, and the invariants the schema exists to hold — no write policy
+on `timesheet_periods`, no function granted to `public`, the sign-up role
+clamp, the self-approval check — are asserted as text.
+
+**What is not, and cannot be, without a database.** Whether a policy actually
+permits a read. Whether a migration applies cleanly, or in the order given.
+Whether a `plpgsql` body compiles — it is not checked until it runs, and that
+is exactly how the next item happened.
+
+### `hire_applicant` has been broken since migration 004 — FOUND, FIXED IN 006
+
+004 dropped `assignments.client_rate_per_hour`,
+`assignments.freelancer_rate_per_hour` and
+`projects.freelancer_rate_per_hour`. `hire_applicant`, written in 002, still
+inserted into all three. It would have failed on the first hire with "column
+does not exist".
+
+Nobody noticed because nobody had run it. Postgres does not check a function
+body against the schema until the function executes, so a migration that
+changes a column set has to grep the functions — there is no compiler to do it.
+
+Repaired in `006-adapter-gaps.sql`, along with five other things writing the
+adapter turned up: `open_period` (which did not exist at all, so a month could
+not be opened), `set_outreach_consent`, `audit_for_assignment`,
+`my_applications`, `applications_for_project`, and a trigger making project
+transitions legal-or-refused rather than whatever a browser PATCHes.
+
+**The pattern behind five of those six.** The v1 policies were written for the
+timesheet flows, where every reader is a party to the assignment. The
+marketplace reads across that boundary: a company reading an applicant's name,
+a freelancer reading the title of a project they have no policy on. RLS cannot
+express "you may read this row because of a relationship elsewhere", so those
+reads go through narrow security-definer functions instead. Each takes the
+smallest argument that identifies the relationship and returns only what the
+screen needs — a general one would defeat the design it is patching.
+
+### What running it will cost — an estimate, not a promise
+
+Expect a session of failures on first apply: statement ordering, enum values
+added and used in the same transaction (Postgres refuses that), a cast or two.
+Boring, individually obvious, and not knowable in advance from here.
+
+Keep the fixes in the migration files rather than in the SQL editor. A database
+repaired by hand is a database the next environment cannot reproduce, and the
+whole reason these are files is that there will be a next environment.
