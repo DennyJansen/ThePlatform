@@ -13,11 +13,12 @@
  */
 
 const STORAGE_KEY = 'platform.v1.db';
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
-// Bumped to 2 when the marketplace added projects, applications and profiles.
-// A stored v1 document is discarded rather than migrated: it is demo data, and
-// reseeding is both simpler and more honest than a migration nobody will test.
+// Bumped whenever the stored shape changes: 2 for the marketplace tables, 3
+// when assignments moved to a single agreed rate. An older document is
+// discarded rather than migrated - it is demo data, and reseeding is simpler
+// and more honest than a migration nobody will test.
 /** Tables that may be written by the adapter. */
 const TABLES = [
   'organizations',

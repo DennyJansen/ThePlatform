@@ -191,7 +191,7 @@ export const AUDIT_ACTION = Object.freeze({
  */
 export const ALLOWED_PROJECT_FIELDS = Object.freeze([
   'id', 'organization_id', 'created_by', 'title', 'description',
-  'client_rate_per_hour', 'freelancer_rate_per_hour',
+  'agreed_rate_per_hour',
   'indicative_hours_per_week', 'start_date', 'duration_months',
   'location', 'remote_policy', 'status', 'created_at', 'published_at',
 ]);

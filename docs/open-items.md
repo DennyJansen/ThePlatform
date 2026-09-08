@@ -19,79 +19,75 @@ once the value is set. Billing it is step 4 work.
 
 ### 2. VAT treatment of the freelancer-side deduction
 
-**ANSWERED.** Every rate is ex VAT — the client's €100, the freelancer's €95,
-and the €2 deduction.
+**ANSWERED.** Every rate is ex VAT — the agreed €95, the €2 freelancer fee and
+the €5 client fee alike.
 
-That the €2 is *ex VAT* settles more than the number. A discount on someone's
-rate carries no VAT of its own; a €2 that has 21% added to it is a **service
-the freelancer buys**, and whose VAT they reclaim. So there are two amounts,
-not one netted figure:
+The fees are applied to the rate **before** any VAT, and VAT is then charged on
+each side's own invoice:
 
 | | Ex VAT | VAT 21% | Incl. |
 |---|---|---|---|
-| The freelancer's hours | 95.00 | 19.95 | 114.95 |
-| The platform's fee | 2.00 | 0.42 | 2.42 |
-| **Net to the freelancer** | | | **112.53** |
+| The freelancer invoices (95 − 2) | 93.00 | 19.53 | 112.53 |
+| The company is invoiced (95 + 5) | 100.00 | 21.00 | 121.00 |
+| Platform take | 7.00 | | |
 
-€93.00/hour is still what the freelancer keeps once VAT settles through their
-return. It is not the figure that moves, and the confirmation screen shows
-both.
+Nothing is charged on the agreed €95, because nobody invoices it — see item 2c.
+
+Charging VAT on 95 and then deducting 2 would overstate the freelancer's
+turnover by €2/hour and hand the Belastingdienst VAT on money they never
+received. There is a test for that specific mistake.
 
 **Implemented in:** `computeFees()` in `src/domain/money.js`. Tested under
-"VAT — spec §8.9, answered". VAT is applied once to the line total, not per
+"VAT — spec §8.9, answered". VAT is applied once to each line total, not per
 hour and multiplied, with a test that the two agree at awkward hour counts.
 
 ### 2b. Who raises the invoices — ANSWERED: not the platform
 
 **Decided:** the freelancer and the company each raise their own invoices, in
-their own systems. The platform generates no documents, allocates no invoice
-numbers, and does not self-bill.
+their own systems. The platform generates no documents and allocates no
+invoice numbers. Spec §8.1's self-billing authorisation stops being a clause
+this code depends on, and the invoice-numbering problem it created disappears
+with it.
 
-Three consequences worth having written down:
+**The cost, stated plainly:** §3's "the approved number and the invoiced number
+are the same number *by construction*" becomes "*…if whoever raises the invoice
+copies it correctly*". The platform freezes, versions and audits the figure;
+the last step out to a document is manual and invisible from here. That is the
+difference between a billing system and an approval tool.
 
-1. **Spec §8.1 stops being load-bearing.** The self-billing authorisation
-   clause existed so the platform could invoice in the freelancer's name. It no
-   longer does, so that clause can come out of the terms — and the invoice
-   numbering problem it created (whose sequence does a self-billed invoice
-   belong to?) disappears with it. That was the hardest unsolved item on this
-   list an hour ago; this decision deletes it rather than answering it.
-2. **§3's guarantee weakens, and that is the point of the system.** "The
-   approved number and the invoiced number are the same number *by
-   construction*" becomes "*…if whoever raises the invoice copies it
-   correctly*". The platform still freezes, versions and audits the figure; the
-   last step out to a document is now manual and invisible from here. That is
-   the difference between a billing system and an approval tool, and it is a
-   deliberate trade rather than an oversight.
-3. **`invoiced` and `paid` stay** as period statuses, set by ops against
-   documents raised elsewhere — which is what §1 already said about payment
-   ("manual bank transfer, marked paid in admin").
+`invoiced` and `paid` stay as period statuses that ops sets against documents
+raised elsewhere — which is what §1 already said about payment.
 
-**Removed:** `src/domain/invoice.js`, its tests, `004-invoices.sql`,
-`CONFIG.platform`, and the invoice column on F3. Step 4 of §9 is struck.
+### 2c. How the platform collects its fee — ANSWERED
 
-### 2c. How the platform collects its own fee — OPEN
+**Decided:** the platform is the middle man, with a contract on each side. One
+agreed rate, and the two fees point outward from it:
 
-The one thing this decision leaves dangling, and it is commercial rather than
-technical.
+```
+             freelancer fee 2.00        client fee 5.00
+        93.00  <-------------  95.00  ------------->  100.00
+  what the freelancer         the agreed          what the company
+       invoices                 rate                is invoiced
+```
 
-§3's model has the platform taking €5/hour as the spread between what the
-client pays and what the freelancer gets, plus €2/hour from the freelancer.
-Both assumed the platform sat in the middle of the invoice chain. If the
-freelancer invoices the company directly, it does not:
+- The freelancer invoices **93.00** — the agreed rate less their fee.
+- The company is invoiced **100.00** — the agreed rate plus its fee.
+- The platform buys at 93 and sells at 100, keeping **7.00**.
+- Every figure is ex VAT. VAT applies to each side's own invoice: 21% of 93,
+  21% of 100. Nothing is charged on the agreed rate, because nobody invoices it.
 
-- **The €5 spread has nowhere to live.** There is one rate on one invoice, and
-  the freelancer is the one sending it. `client_rate_per_hour` and
-  `freelancer_rate_per_hour` being two different numbers only means something
-  if two different invoices exist.
-- **The €2/hour still has to be billed by someone.** Presumably the platform
-  invoices the freelancer for it — which is a platform-issued invoice, and so
-  not quite "no invoicing via the platform".
+**Each side sees the agreed rate and its own fee, never the other's.**
 
-Nothing is broken and nothing needs changing today: the code still implements
-the §3 model, and the tests still hold it. But the board shows a freelancer
-€95/hour while the company entered €100, and that €5 no longer has a mechanism
-behind it. Worth deciding before the first real placement, because it changes
-what the rate fields mean rather than just what they display.
+**Implemented in:** `computeFees()`, `clientRate()` and `freelancerRate()` in
+`src/domain/money.js`; migration `004-agreed-rate.sql`. The stored field is
+`agreed_rate_per_hour` and the two invoiced rates are derived — a test asserts
+a project carries exactly one `*_rate_per_hour` column, because two stored
+numbers that must differ by a fee are a pair that can drift.
+
+This supersedes the earlier model, in which a company entered a budget of 100
+and the freelancer's 95 was derived by subtracting a hidden spread. That model
+had no place to put the €2 once the platform stopped invoicing, and it hid a
+number from the freelancer that they are now meant to negotiate on.
 
 ### 3. Payout timing versus client payment terms (spec §8.4)
 

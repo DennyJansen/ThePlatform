@@ -125,7 +125,7 @@ describe('The loop — submit, approve, and the numbers match', () => {
     assert.equal(submitted.period.status, PERIOD_STATUS.SUBMITTED);
     assert.equal(submitted.summary.total_hours, 24);
     assert.equal(submitted.summary.client_total, 240000, '24h at 100.00');
-    assert.equal(submitted.summary.freelancer_net, 223200, '24h at 93.00');
+    assert.equal(submitted.summary.freelancer_total, 223200, '24h at 93.00');
 
     await adapter.signOut();
     await signInAs(adapter, APPROVER);

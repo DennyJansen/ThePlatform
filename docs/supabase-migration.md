@@ -14,7 +14,8 @@ the adapter methods, flip one flag in `src/config.js`.
    financial data and there is no reason for it to leave the EU.
 2. Run `src/data/supabase/schema.sql` in the SQL editor, once, whole.
    Then `002-marketplace.sql` (projects, applications, profiles, the
-   `project_board` view) and `003-signup.sql` (self-service sign-up).
+   `project_board` view), `003-signup.sql` (self-service sign-up) and
+   `004-agreed-rate.sql` (one agreed rate, two fees).
 
    Read the warning at the top of 003 before running it: sign-up metadata
    comes from the browser, and the role clamp in that trigger is what stops
@@ -57,8 +58,9 @@ There is no ops UI in v1, by design (spec §1). Use the table editor:
    the matching `app_users` row with the same `id` and the right `role`.
    The `id` must equal `auth.users.id` — that is what makes `auth.uid()` work.
 2. Insert the client `organizations` row.
-3. Insert the `assignments` row. Rates are **integer cents**: €100.00/hour is
-   `10000`. The `rates_coherent` constraint refuses an incoherent set.
+3. Insert the `assignments` row. Rates are **integer cents**: €95.00/hour is
+   `9500`. Set `agreed_rate_per_hour` and the two fees; the invoiced rates are
+   derived. The `rates_coherent` constraint refuses an incoherent set.
 4. Leave `auto_approve_enabled` false (spec §7).
 
 ## 3. Implement the adapter

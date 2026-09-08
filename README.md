@@ -14,6 +14,7 @@ Two halves sharing one data port:
   deliberately; each reversal is documented where it lands.
 
 Invoicing is **not** here: the freelancer and the company each raise their own.
+The platform sits between them — one agreed rate, a fee to each side.
 
 **Live:** enable Pages first — see [Deploying](#deploying).
 
@@ -78,7 +79,7 @@ npx serve . ; # or: python -m http.server 5500
 
 ## Tests
 
-169 tests, run in the browser at **`/tests.html`**. They cover the fee and VAT
+164 tests, run in the browser at **`/tests.html`**. They cover the fee and VAT
 arithmetic, both state machines, the compliance absences of spec §6, the
 append-only audit log, the versioning guarantee, translation parity, sign-up
 and CV parsing, and the full loops end to end against the mock adapter.

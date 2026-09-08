@@ -60,6 +60,7 @@ import {
   normaliseFreelancerSignup,
   resolveExistingAccount,
 } from '../../domain/signup.js';
+import { clientRate } from '../../domain/money.js';
 import { addDays, addHours, periodKey } from '../../domain/dates.js';
 import { load, transact, save, newId, newToken, storageIsPersistent } from './store.js';
 import { buildSeed } from './seed.js';
@@ -362,7 +363,8 @@ export function createMockAdapter() {
               organization_name: org ? org.name : null,
               freelancer_name: fl ? fl.name : null,
               hours_to_date: Math.round(hoursToDate * 100) / 100,
-              spend_to_date: Math.round(hoursToDate * a.client_rate_per_hour),
+              spend_to_date: Math.round(hoursToDate
+                * clientRate(a.agreed_rate_per_hour, a.client_fee_per_hour)),
             };
           });
         return later(rows);
@@ -497,7 +499,8 @@ export function createMockAdapter() {
               decided_at: live.decided_at,
               rejection_comment: live.rejection_comment,
               total_hours: Math.round(hours * 100) / 100,
-              client_total: Math.round(hours * assignment.client_rate_per_hour),
+              client_total: Math.round(hours
+                * clientRate(assignment.agreed_rate_per_hour, assignment.client_fee_per_hour)),
               invoice_pdf: invoice ? invoice.pdf : null,
             };
           });

@@ -83,21 +83,40 @@ number rather than two numbers that usually agree.
 multiplying by 100, because `1.005 * 100` is `100.49999999999999` in binary
 floating point and rounds the wrong way. There is a test for exactly this.
 
-**Every rate is ex VAT** — the client's, the freelancer's, and the €2/hour
-deduction. Because the deduction is ex VAT it carries 21% of its own, which
-makes it a supply from the platform to the freelancer rather than a discount
-on their rate. So `computeFees` returns two supplies, each with its own VAT,
-and nets them only in cash:
+### One agreed rate, two fees pointing outward
+
+The platform is the middle man, with a contract on each side. There is a single
+**agreed rate** — what the freelancer and the company shake hands on — and the
+fees point outward from it:
 
 ```
-the freelancer's hours   95.00 + 19.95 = 114.95
-the platform's fee        2.00 +  0.42 =   2.42
-                                          112.53   net to the freelancer
+                 freelancer fee 2.00        client fee 5.00
+            93.00  <-------------  95.00  ------------->  100.00
+      what the freelancer         the agreed          what the company
+           invoices                 rate                is invoiced
 ```
 
-The €93.00 of spec §3 is unchanged — it is what the freelancer keeps once VAT
-settles through their return, not what arrives. Screens show both, because a
-freelancer checking a confirmation is asking the second question.
+The platform buys at 93 and sells at 100, keeping 7. Every figure is ex VAT;
+VAT applies to each side's own invoice — 21% of 93, and 21% of 100.
+
+**95.00 is never invoiced by anybody.** It is the anchor both parties
+negotiated and the number each of them recognises, which is why it is the one
+that gets *stored*. The two rates that touch money are derived from it wherever
+they are needed. Storing them instead would be storing two numbers that must
+differ by a fee — a pair that can drift, after which nobody can say what was
+agreed. There is a test asserting a project carries exactly one `*_rate_per_hour`
+field.
+
+**Each side sees the agreed rate and its own fee.** The freelancer's screens do
+not show the €5; the company's do not show the €2. Neither is a secret exactly,
+but neither is any of their business, and showing a freelancer that the company
+pays €5 more invites a conversation about the €5 rather than about the work.
+
+This replaced an earlier model in which a posting carried a client budget and a
+derived freelancer rate, with the spread hidden. That needed a `project_board`
+view whose whole job was omitting a column. A posting now carries one rate that
+both sides are meant to see, so there is nothing to hide and nothing to forget
+to hide.
 
 **The platform does not raise any invoice.** Decided after v1: the freelancer
 and the company each invoice from their own systems. So spec §8.1's
@@ -133,7 +152,7 @@ transition returns the new view rather than patching the old one. The only
 client-side state that outlives a render is the locale choice and the
 unsaved-changes guard on F2.
 
-## The marketplace, and the one number it must not leak
+## The marketplace
 
 The marketplace was added after v1, reversing spec §1's exclusion of matching
 and profiles. Architecturally it changed three things.
@@ -144,17 +163,18 @@ deliberately not the same role as `approver`: §2 gives the approver one narrow
 power — approving hours on one named assignment — and the compliance story
 leans on that narrowness. One person may hold both.
 
-**A rate split.** A company enters its budget. The freelancer rate is
-*derived* (`deriveFreelancerRate`) and stored alongside it, never typed. The
-board shows only the derived figure. Crucially, the stripping happens in the
-data layer — `projectForFreelancer()` in the mock, and a `project_board` view
-with no budget column in Postgres — not in a template. A new screen cannot leak
-the spread by forgetting to omit a field, because the field is not there.
+**One rate on a posting.** A company states the rate it is offering the
+freelancer, and is shown live what it will itself pay once the client fee is
+added. The board shows the freelancer that same agreed rate, and beneath it
+what they would actually invoice after their own fee — both, because the first
+is what they negotiate on and the second is what reaches their bank. Being
+shown only one of those is how someone feels misled two months later.
 
-The €2/hour freelancer-side deduction *is* disclosed on the project page. It
-is already visible in the submit confirmation once someone is placed, and
-finding out about it at that point rather than before applying is the kind of
-surprise that loses a freelancer.
+See "One agreed rate, two fees pointing outward" above for the model itself.
+`projectForFreelancer()` survives from the earlier design, now stripping only
+`created_by` — it stays because it is where a company-only field would have to
+be removed if a posting ever acquires one, and the data layer is the right
+place for that rather than whichever template happens to render it.
 
 **A second state machine.** Applications run
 `submitted → screening → hired`, with `reject` available to the company at
@@ -224,7 +244,7 @@ including the SSRF check that is the easiest part to leave out.
 | submit / approve / reject | adapter method | `rpc()` into a security-definer function |
 | Audit | array append + invariant check | insert-only table, no update/delete rule |
 | Ops console | none (audit shown on C2) | the project's table editor |
-| Project board | a JS filter + `projectForFreelancer` | the `project_board` view, which has no budget column |
+| Project board | a JS filter | the `project_board` view |
 | Profile visibility | `assertProfileVisibleTo` | the `read_profiles` policy |
 | Application transitions | adapter method | `rpc()` into a security-definer function |
 | Scope never on an assignment | omitted by `buildAssignmentFromHire` | `trg_assignment_no_scope` |

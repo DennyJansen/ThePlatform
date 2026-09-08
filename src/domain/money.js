@@ -23,30 +23,52 @@ export const DEFAULT_HOUR_INCREMENT = 0.25;
 export const MAX_HOURS_PER_DAY = 24;
 
 /**
- * The client-side spread, in cents per hour. Spec §3's worked example: a €100
- * client budget carries a €95 freelancer rate, so the spread is €5.
+ * THE RATE MODEL.
  *
- * This is the number a marketplace listing must never reveal. A company enters
- * its budget; the board shows the freelancer what they would earn. Both are
- * stored, only one is shown to each side.
- */
-export const DEFAULT_CLIENT_SIDE_SPREAD = 500;
-
-/** Sanity bounds on a posted budget, in cents per hour. */
-export const MIN_CLIENT_RATE = 2000;
-export const MAX_CLIENT_RATE = 50000;
-
-/**
- * What the freelancer would contract at, derived from the client's budget.
+ * The platform is the middle man, with two contracts: one with the freelancer,
+ * one with the company. There is a single **agreed rate** — what the two sides
+ * shake hands on — and the platform's fees point outward from it:
  *
- * Never store only one of the two. The listing shows this figure; the
- * assignment that a hire eventually produces needs both, and recomputing the
- * spread later from a rate someone has since edited is how the margin
- * silently changes.
+ *              freelancer fee 2.00        client fee 5.00
+ *         93.00  <-------------  95.00  ------------->  100.00
+ *   what the freelancer         the agreed          what the company
+ *        invoices                 rate                is invoiced
+ *
+ * The platform buys at 93 and sells at 100, keeping 7. All three figures are
+ * ex VAT; VAT applies to each side's own invoice.
+ *
+ * Note that 95.00 is never invoiced by anybody. It is the anchor both parties
+ * negotiated and the number each of them recognises — which is why it is what
+ * gets stored, and the two rates that touch money are derived from it. Storing
+ * the derived rates instead would let the anchor drift out of step with the
+ * fees, and then nobody could say what was agreed.
+ *
+ * Each side sees the agreed rate and its OWN fee. The freelancer is not shown
+ * the client fee; the company is not shown the freelancer's. Neither is a
+ * secret exactly, but neither is any of their business.
  */
-export function deriveFreelancerRate(clientRateCents, spread = DEFAULT_CLIENT_SIDE_SPREAD) {
-  if (!Number.isInteger(clientRateCents) || clientRateCents < 0) return 0;
-  return Math.max(0, clientRateCents - spread);
+
+/** Added to the agreed rate to reach what the company is invoiced. */
+export const DEFAULT_CLIENT_FEE = 500;
+
+/** Deducted from the agreed rate to reach what the freelancer invoices. */
+export const DEFAULT_FREELANCER_FEE = 200;
+
+/** Sanity bounds on an agreed rate, in cents per hour. */
+export const MIN_AGREED_RATE = 2000;
+export const MAX_AGREED_RATE = 50000;
+
+/** What the company is invoiced: the agreed rate plus the client fee. */
+export function clientRate(agreedCents, clientFee = DEFAULT_CLIENT_FEE) {
+  if (!Number.isInteger(agreedCents) || agreedCents < 0) return 0;
+  return agreedCents + (Number.isInteger(clientFee) ? clientFee : DEFAULT_CLIENT_FEE);
+}
+
+/** What the freelancer invoices: the agreed rate less the freelancer fee. */
+export function freelancerRate(agreedCents, freelancerFee = DEFAULT_FREELANCER_FEE) {
+  if (!Number.isInteger(agreedCents) || agreedCents < 0) return 0;
+  const fee = Number.isInteger(freelancerFee) ? freelancerFee : DEFAULT_FREELANCER_FEE;
+  return Math.max(0, agreedCents - fee);
 }
 
 /**
@@ -119,88 +141,86 @@ export function vatCents(exVatCents, rateBp = VAT_RATE_BP) {
 }
 
 /**
- * The fee arithmetic from spec §3, computed from an assignment and a total
- * number of hours. Every figure is ex-VAT cents.
+ * Everything derived from an agreed rate and a number of hours. Ex-VAT cents
+ * unless the key says otherwise.
  *
- * On a EUR 100/hour client budget:
- *   client is invoiced          100.00/hour   -> client_total
- *   freelancer's assignment rate 95.00/hour   -> freelancer_gross
- *   platform fee per hour         2.00/hour   -> freelancer_fee
- *   freelancer nets              93.00/hour   -> freelancer_net
- *   platform take                 7.00/hour   -> platform_take
+ * On a EUR 95.00 agreed rate:
+ *   agreed rate                   95.00/hour  -> agreed_total   (never invoiced)
+ *   freelancer fee                 2.00/hour  -> freelancer_fee_total
+ *   the freelancer invoices       93.00/hour  -> freelancer_total
+ *   client fee                     5.00/hour  -> client_fee_total
+ *   the company is invoiced      100.00/hour  -> client_total
+ *   platform take                  7.00/hour  -> platform_take
  *
- * platform_take is asserted to equal client_total - freelancer_net, which is
- * the invariant that catches a mis-entered rate before it reaches an invoice.
+ * platform_take is asserted to equal client_total - freelancer_total, which is
+ * the invariant that catches a mis-entered fee before it reaches an invoice.
+ *
+ * VAT applies to each side's own invoice — 93 + 21% for the freelancer, 100 +
+ * 21% for the company. Nothing is charged on the agreed rate itself, because
+ * nobody invoices it.
  */
 export function computeFees(assignment, hours, vatRateBp = VAT_RATE_BP) {
   const h = Number.isFinite(hours) ? hours : 0;
-  const clientTotal = lineTotalCents(h, assignment.client_rate_per_hour);
-  const freelancerGross = lineTotalCents(h, assignment.freelancer_rate_per_hour);
-  const freelancerFee = lineTotalCents(h, assignment.freelancer_fee_per_hour);
-  const freelancerNet = freelancerGross - freelancerFee;
-  const clientSideSpread = clientTotal - freelancerGross;
 
-  // VAT. Spec §8.9 / §10 asked how the per-hour fee is treated; the answer is
-  // that every rate here is EX VAT, the €2 included. A fee with 21% added to
-  // it is a supply the freelancer buys, not a discount on their rate, so it
-  // carries VAT of its own and they reclaim it like any other cost.
-  //
-  // Two separate supplies, therefore two separate VAT amounts, and they are
-  // NOT netted before VAT is applied:
-  //
-  //   the freelancer's hours   95.00 + 19.95 VAT = 114.95
-  //   the platform's fee        2.00 +  0.42 VAT =   2.42
-  //   net to the freelancer                        112.53
-  //
-  // 93.00 is still what they keep once the VAT washes through, which is why
-  // freelancer_net is unchanged. It is not the figure that moves.
-  //
-  // The platform does not raise any of these documents — the freelancer and
-  // the company each invoice in their own systems. These figures exist so that
-  // whoever raises an invoice is copying a number both sides already agreed.
+  const agreed = assignment.agreed_rate_per_hour;
+  const clientFee = Number.isInteger(assignment.client_fee_per_hour)
+    ? assignment.client_fee_per_hour
+    : DEFAULT_CLIENT_FEE;
+  const freelancerFee = Number.isInteger(assignment.freelancer_fee_per_hour)
+    ? assignment.freelancer_fee_per_hour
+    : DEFAULT_FREELANCER_FEE;
+
+  const agreedTotal = lineTotalCents(h, agreed);
+  const clientTotal = lineTotalCents(h, clientRate(agreed, clientFee));
+  const freelancerTotal = lineTotalCents(h, freelancerRate(agreed, freelancerFee));
+
   const clientTotalVat = vatCents(clientTotal, vatRateBp);
-  const freelancerGrossVat = vatCents(freelancerGross, vatRateBp);
-  const freelancerFeeVat = vatCents(freelancerFee, vatRateBp);
+  const freelancerTotalVat = vatCents(freelancerTotal, vatRateBp);
 
   return {
     hours: round2(h),
     vat_rate_bp: vatRateBp,
 
-    // Ex VAT — the figures the fee model is defined in.
+    // The anchor. Shown to both sides; invoiced by neither.
+    agreed_rate_per_hour: agreed,
+    agreed_total: agreedTotal,
+
+    // The fees, each shown only to the side that pays it.
+    client_fee_per_hour: clientFee,
+    freelancer_fee_per_hour: freelancerFee,
+    client_fee_total: clientTotal - agreedTotal,
+    freelancer_fee_total: agreedTotal - freelancerTotal,
+
+    // Ex VAT, and these are the two that touch money.
     client_total: clientTotal,
-    freelancer_gross: freelancerGross,
-    freelancer_fee: freelancerFee,
-    freelancer_net: freelancerNet,
-    client_side_spread: clientSideSpread,
-    platform_take: clientSideSpread + freelancerFee,
+    freelancer_total: freelancerTotal,
+    platform_take: clientTotal - freelancerTotal,
 
-    // VAT, per supply.
+    // VAT, per invoice.
     client_total_vat: clientTotalVat,
-    freelancer_gross_vat: freelancerGrossVat,
-    freelancer_fee_vat: freelancerFeeVat,
+    freelancer_total_vat: freelancerTotalVat,
 
-    // Including VAT — the figures that move between bank accounts.
+    // Including VAT — what actually moves.
     client_total_incl: clientTotal + clientTotalVat,
-    freelancer_gross_incl: freelancerGross + freelancerGrossVat,
-    freelancer_fee_incl: freelancerFee + freelancerFeeVat,
-    freelancer_cash: (freelancerGross + freelancerGrossVat)
-      - (freelancerFee + freelancerFeeVat),
+    freelancer_total_incl: freelancerTotal + freelancerTotalVat,
   };
 }
 
 /**
- * True when the assignment's three rates are internally consistent, i.e. the
- * platform take is non-negative on both legs. A freelancer rate above the
- * client rate means the platform pays to place someone; that is always a data
- * entry error in v1 and ops should see it before a period is opened.
+ * True when an assignment's rate and fees are internally consistent.
+ *
+ * A freelancer fee larger than the agreed rate would invoice a negative
+ * amount; a negative client fee would mean the platform pays to place someone.
+ * Both are always data entry errors, and ops should see them before a period
+ * is opened rather than on an invoice.
  */
 export function ratesAreCoherent(assignment) {
-  const c = assignment.client_rate_per_hour;
-  const f = assignment.freelancer_rate_per_hour;
-  const fee = assignment.freelancer_fee_per_hour;
-  if (![c, f, fee].every(Number.isInteger)) return false;
-  if (c < 0 || f < 0 || fee < 0) return false;
-  return f <= c && fee <= f;
+  const agreed = assignment.agreed_rate_per_hour;
+  const clientFee = assignment.client_fee_per_hour;
+  const freelancerFee = assignment.freelancer_fee_per_hour;
+  if (![agreed, clientFee, freelancerFee].every(Number.isInteger)) return false;
+  if (agreed <= 0 || clientFee < 0 || freelancerFee < 0) return false;
+  return freelancerFee <= agreed;
 }
 
 /** Format cents as a localised currency string. */

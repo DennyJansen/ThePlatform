@@ -22,7 +22,7 @@ import { statusBadge, notice, confirmDialog, emptyState, definitionList } from '
 import { entryGrid } from '../components/entryGrid.js';
 import { clientFeeTable } from '../components/feeTable.js';
 import { formatMonth, formatDate, formatDateTime } from '../../domain/dates.js';
-import { formatMoney, formatHours } from '../../domain/money.js';
+import { formatMoney, formatHours, clientRate } from '../../domain/money.js';
 import { navigate } from '../../app/router.js';
 
 /* ------------------------------------------------------------------ *
@@ -250,7 +250,8 @@ export async function renderReview(container, { adapter, periodId }) {
           clientFeeTable(current.summary),
           definitionList([
             [t('period.rate'), t('period.rate_unit_ex_vat', {
-              amount: formatMoney(current.assignment.client_rate_per_hour, locale),
+              amount: formatMoney(clientRate(current.assignment.agreed_rate_per_hour,
+                current.assignment.client_fee_per_hour), locale),
             })],
           ]),
         ]),

@@ -18,7 +18,9 @@ import { t, tError, getIntlLocale } from '../../i18n/index.js';
 import {
   notice, emptyState, confirmDialog, labelBadge, definitionList,
 } from '../components/ui.js';
-import { formatMoney, parseRateToCents } from '../../domain/money.js';
+import {
+  formatMoney, parseRateToCents, freelancerRate, DEFAULT_FREELANCER_FEE,
+} from '../../domain/money.js';
 import { formatDate as fmtDate } from '../../domain/dates.js';
 import { navigate } from '../../app/router.js';
 
@@ -66,7 +68,7 @@ export async function renderBoard(container, { adapter }) {
         el('span', { class: 'card__org' }, p.organization_name || ''),
         el('span', { class: 'card__meta' }, [
           el('strong', t('board.rate_from', {
-            amount: formatMoney(p.freelancer_rate_per_hour, locale),
+            amount: formatMoney(p.agreed_rate_per_hour, locale),
           })),
           el('span', { class: 'sep', 'aria-hidden': 'true' }, '·'),
           t(REMOTE_KEYS[p.remote_policy] || 'remote.hybrid'),
@@ -128,7 +130,7 @@ export async function renderProject(container, { adapter, projectId }) {
         type: 'text',
         inputmode: 'decimal',
         autocomplete: 'off',
-        placeholder: formatMoney(p.freelancer_rate_per_hour, locale),
+        placeholder: formatMoney(p.agreed_rate_per_hour, locale),
       });
 
       const result = await confirmDialog({
@@ -144,7 +146,7 @@ export async function renderProject(container, { adapter, projectId }) {
             el('label', { class: 'label', for: 'apply-rate' }, t('apply.rate')),
             rate,
             el('p', { class: 'field__help' }, t('apply.rate_help', {
-              amount: formatMoney(p.freelancer_rate_per_hour, locale),
+              amount: formatMoney(p.agreed_rate_per_hour, locale),
             })),
           ]),
         ]),
@@ -186,7 +188,7 @@ export async function renderProject(container, { adapter, projectId }) {
           el('h1', { class: 'period-head__title' }, p.title),
           el('p', { class: 'period-head__meta' }, [
             el('strong', t('board.rate_from', {
-              amount: formatMoney(p.freelancer_rate_per_hour, locale),
+              amount: formatMoney(p.agreed_rate_per_hour, locale),
             })),
             el('span', { class: 'sep', 'aria-hidden': 'true' }, '·'),
             t(REMOTE_KEYS[p.remote_policy] || 'remote.hybrid'),
@@ -225,8 +227,14 @@ export async function renderProject(container, { adapter, projectId }) {
             hours: String(p.indicative_hours_per_week),
           }), t('project.scope_note')]
           : null,
-        [t('project.your_rate'), formatMoney(p.freelancer_rate_per_hour, locale),
-          t('project.fee_note', { fee: formatMoney(200, locale) })],
+        // The agreed rate, then what they would actually invoice after the
+        // platform's fee. Both, because the first is the number they negotiate
+        // on and the second is the number that reaches their bank — and being
+        // shown only one of those is how a freelancer feels misled later.
+        [t('project.agreed_rate'), formatMoney(p.agreed_rate_per_hour, locale)],
+        [t('project.your_rate'),
+          formatMoney(freelancerRate(p.agreed_rate_per_hour, DEFAULT_FREELANCER_FEE), locale),
+          t('project.fee_note', { fee: formatMoney(DEFAULT_FREELANCER_FEE, locale) })],
       ], { class: 'dl--split' }),
 
       canApply

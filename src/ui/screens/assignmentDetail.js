@@ -20,7 +20,7 @@ import { el, clear, append, focusHeading } from '../dom.js';
 import { t, tError, getIntlLocale } from '../../i18n/index.js';
 import { definitionList, notice, table } from '../components/ui.js';
 import { formatDate, formatDateTime } from '../../domain/dates.js';
-import { formatMoney, formatHours } from '../../domain/money.js';
+import { formatMoney, formatHours, clientRate } from '../../domain/money.js';
 
 /**
  * Render an audit row's action using the payload it carries.
@@ -97,7 +97,8 @@ export async function renderAssignmentDetail(container, { adapter, assignmentId 
       [t('period.approver'), assignment.approver ? assignment.approver.name : t('common.none')],
       [t('c2.dates'), term],
       [t('period.rate'), t('period.rate_unit', {
-        amount: formatMoney(assignment.client_rate_per_hour, locale),
+        amount: formatMoney(clientRate(assignment.agreed_rate_per_hour,
+          assignment.client_fee_per_hour), locale),
       }), t('common.ex_vat')],
       [t('c2.contract'), assignment.contract_pdf
         ? el('a', { class: 'link', href: assignment.contract_pdf, rel: 'noopener' },

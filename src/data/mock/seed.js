@@ -7,14 +7,15 @@
  * one so that F3 (history) and C2 (assignment detail) have something true to
  * show, and so the audit trail is not empty on first load.
  *
- * Amounts are integer cents. Rates follow the worked example in spec section 3:
- * client 100.00, freelancer 95.00, deduction 2.00, platform take 7.00.
+ * Amounts are integer cents. One agreed rate of 95.00, from which the company
+ * is invoiced 100.00 (+5.00 client fee) and the freelancer invoices 93.00
+ * (-2.00 freelancer fee). Platform take 7.00.
  */
 
 import {
   ROLE, PERIOD_STATUS, PROJECT_STATUS, APPLICATION_STATUS, AUDIT_ACTION,
 } from '../../domain/model.js';
-import { deriveFreelancerRate } from '../../domain/money.js';
+import { clientRate, DEFAULT_CLIENT_FEE, DEFAULT_FREELANCER_FEE } from '../../domain/money.js';
 import { currentPeriod, isoDate, monthDays, periodKey } from '../../domain/dates.js';
 import { newId } from './store.js';
 
@@ -121,9 +122,10 @@ export function buildSeed(now = new Date()) {
     freelancer_id: freelancer.id,
     organization_id: org.id,
     approver_id: approver.id,
-    client_rate_per_hour: 10000,
-    freelancer_rate_per_hour: 9500,
-    freelancer_fee_per_hour: 200,
+    // One agreed rate; the two fees point outward from it. See domain/money.js.
+    agreed_rate_per_hour: 9500,
+    client_fee_per_hour: DEFAULT_CLIENT_FEE,
+    freelancer_fee_per_hour: DEFAULT_FREELANCER_FEE,
     fixed_fee_amount: 35000,
     // Spec section 10 lists the payer of the fixed fee as unresolved. Null is
     // the honest value; the UI shows it as undecided rather than guessing.
@@ -195,7 +197,7 @@ export function buildSeed(now = new Date()) {
         {
           version: 1,
           total_hours: v1Hours,
-          client_total: Math.round(v1Hours * assignment.client_rate_per_hour),
+          client_total: Math.round(v1Hours * clientRate(assignment.agreed_rate_per_hour)),
         }, monthEnd);
       audited(AUDIT_ACTION.PERIOD_REJECTED, approver.id, 'TimesheetPeriod', v1.id,
         { version: 1, comment: v1.rejection_comment }, decidedAt);
@@ -226,7 +228,7 @@ export function buildSeed(now = new Date()) {
       const v2Payload = {
         version: 2,
         total_hours: v2Hours,
-        client_total: Math.round(v2Hours * assignment.client_rate_per_hour),
+        client_total: Math.round(v2Hours * clientRate(assignment.agreed_rate_per_hour)),
       };
       audited(AUDIT_ACTION.PERIOD_VERSION_CREATED, freelancer.id, 'TimesheetPeriod', v2.id,
         { version: 2, supersedes: v1.id }, decidedAt);
@@ -258,7 +260,7 @@ export function buildSeed(now = new Date()) {
       const payload = {
         version: 1,
         total_hours: hours,
-        client_total: Math.round(hours * assignment.client_rate_per_hour),
+        client_total: Math.round(hours * clientRate(assignment.agreed_rate_per_hour)),
       };
       audited(AUDIT_ACTION.PERIOD_SUBMITTED, freelancer.id, 'TimesheetPeriod', p1.id,
         payload, monthEnd);
@@ -301,7 +303,6 @@ export function buildSeed(now = new Date()) {
     status: PROJECT_STATUS.OPEN,
     created_at: nowIso,
     published_at: nowIso,
-    freelancer_rate_per_hour: deriveFreelancerRate(fields.client_rate_per_hour),
     ...fields,
   });
 
@@ -319,7 +320,7 @@ export function buildSeed(now = new Date()) {
         + 'materialen en stemt af met de uitvoering op locatie. Je bepaalt zelf hoe '
         + 'je het werk inricht; wij leveren de projectdocumentatie en de contacten '
         + 'bij de onderaannemers.',
-      client_rate_per_hour: 10000,
+      agreed_rate_per_hour: 9500,
       indicative_hours_per_week: 32,
       start_date: startNextMonth,
       duration_months: 6,
@@ -332,7 +333,7 @@ export function buildSeed(now = new Date()) {
         + 'installatiewerk kan doorrekenen. Ervaring met W- en E-installaties in de '
         + 'utiliteit is belangrijker dan ervaring met onze software. Je werkt vanuit '
         + 'je eigen locatie en sluit een dagdeel per week aan bij het calculatieoverleg.',
-      client_rate_per_hour: 9500,
+      agreed_rate_per_hour: 9000,
       indicative_hours_per_week: 24,
       start_date: startNextMonth,
       duration_months: 4,
@@ -345,7 +346,7 @@ export function buildSeed(now = new Date()) {
         + 'projectleider met ervaring in de ondergrondse infra. Je stuurt op planning '
         + 'en budget richting de opdrachtgever en houdt contact met netbeheerders. '
         + 'Kennis van de CROW-richtlijnen is een voorwaarde.',
-      client_rate_per_hour: 11500,
+      agreed_rate_per_hour: 11000,
       indicative_hours_per_week: 36,
       start_date: startNextMonth,
       duration_months: 12,
@@ -357,7 +358,7 @@ export function buildSeed(now = new Date()) {
         title: 'BIM-modelleur (concept)',
         description: 'Concepttekst. Nog niet gepubliceerd — bedoeld om te laten zien '
           + 'hoe een opdracht eruitziet voordat een bedrijf hem openzet voor reacties.',
-        client_rate_per_hour: 8500,
+        agreed_rate_per_hour: 8000,
         indicative_hours_per_week: 40,
         start_date: startNextMonth,
         duration_months: 3,
@@ -437,7 +438,7 @@ export function buildSeed(now = new Date()) {
   });
 
   return {
-    schema_version: 2,
+    schema_version: 3,
     organizations: [org, org2],
     users: [freelancer, approver, ops, companyAdmin, companyAdmin2],
     assignments: [assignment],

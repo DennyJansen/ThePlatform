@@ -27,19 +27,15 @@ function row(label, value, options = {}) {
  * The freelancer's view: what the client is billed, and what lands in their
  * account after the per-hour deduction. Spec section 3's worked example.
  */
-export function freelancerFeeTable(summary, assignment) {
+export function freelancerFeeTable(summary) {
   const locale = getIntlLocale();
   const money = (cents) => formatMoney(cents, locale);
   const vatPercent = (summary.vat_rate_bp || 2100) / 100;
 
-  // Two supplies, shown as two blocks, because that is what they are: the
-  // freelancer sells hours to the platform, the platform sells them an
-  // intermediation service. VAT applies to each separately (spec §8.9), and
-  // netting them before VAT would misstate both parties' turnover.
-  //
-  // The last line is cash, not the ex-VAT net. A freelancer checking a
-  // confirmation wants to know what arrives in the bank; the €93 they "keep"
-  // is only true after the VAT washes through their own return.
+  // The agreed rate, their own fee, what they invoice. The client fee is not
+  // here and must not be: it is the company's side of the arrangement, and
+  // showing a freelancer that the company pays €5 more invites a conversation
+  // about the €5 rather than about the work.
   return el('div', { class: 'fees' }, [
     el('table', { class: 'table fees__table' }, [
       el('caption', { class: 'visually-hidden' }, t('f2.confirm_your_invoice')),
@@ -47,70 +43,80 @@ export function freelancerFeeTable(summary, assignment) {
         row(t('f2.confirm_days'), String(summary.days_with_hours)),
         row(t('f2.confirm_hours'), formatHours(summary.total_hours, locale)),
 
-        el('tr', { class: 'fees__section' }, [
-          el('th', { scope: 'row', colspan: '2' }, t('f2.confirm_your_invoice')),
-        ]),
         row(
-          t('f2.confirm_gross', {
-            rate: money(assignment.freelancer_rate_per_hour),
+          t('f2.confirm_agreed', {
+            rate: money(summary.agreed_rate_per_hour),
             hours: formatHours(summary.total_hours, locale),
           }),
-          money(summary.freelancer_gross),
+          money(summary.agreed_total),
         ),
-        row(t('f2.confirm_vat', { percent: String(vatPercent) }),
-          money(summary.freelancer_gross_vat)),
-        row(t('f2.confirm_incl'), money(summary.freelancer_gross_incl)),
-
-        el('tr', { class: 'fees__section' }, [
-          el('th', { scope: 'row', colspan: '2' }, t('f2.confirm_platform_invoice')),
-        ]),
         row(
-          t('f2.confirm_fee', { rate: money(assignment.freelancer_fee_per_hour) }),
-          '−' + money(summary.freelancer_fee),
+          t('f2.confirm_fee', { rate: money(summary.freelancer_fee_per_hour) }),
+          '−' + money(summary.freelancer_fee_total),
         ),
-        row(t('f2.confirm_vat', { percent: String(vatPercent) }),
-          '−' + money(summary.freelancer_fee_vat)),
+        row(t('f2.confirm_you_invoice'), money(summary.freelancer_total), { strong: true }),
 
-        row(t('f2.confirm_cash'), money(summary.freelancer_cash), { strong: true }),
+        row(t('f2.confirm_vat', { percent: String(vatPercent) }),
+          money(summary.freelancer_total_vat)),
+        row(t('f2.confirm_incl'), money(summary.freelancer_total_incl), { strong: true }),
       ]),
     ]),
-    el('p', { class: 'fees__note' }, t('f2.confirm_net_note', {
-      amount: money(summary.freelancer_net),
-    })),
+    el('p', { class: 'fees__note' }, t('f2.confirm_net_note')),
   ]);
 }
 
-/** The approver's view: one number, the one their organisation is invoiced. */
+/**
+ * The approver's view: the agreed rate, their own fee, what they are invoiced.
+ * The mirror image of the freelancer's table — and just as deliberately, it
+ * does not show the €2 the freelancer pays.
+ */
 export function clientFeeTable(summary) {
   const locale = getIntlLocale();
+  const money = (cents) => formatMoney(cents, locale);
+  const vatPercent = (summary.vat_rate_bp || 2100) / 100;
+  const chargesVat = vatCents(summary.charges_total || 0);
+
   return el('div', { class: 'fees' }, [
     el('table', { class: 'table fees__table' }, [
       el('caption', { class: 'visually-hidden' }, t('c1.total_to_invoice')),
       el('tbody', [
         row(t('f2.confirm_hours'), formatHours(summary.total_hours, locale)),
+        row(
+          t('f2.confirm_agreed', {
+            rate: money(summary.agreed_rate_per_hour),
+            hours: formatHours(summary.total_hours, locale),
+          }),
+          money(summary.agreed_total),
+        ),
+        row(
+          t('c1.client_fee', { rate: money(summary.client_fee_per_hour) }),
+          money(summary.client_fee_total),
+        ),
         summary.charges_total > 0
-          ? row(t('f2.confirm_charges'), formatMoney(summary.charges_total, locale))
+          ? row(t('f2.confirm_charges'), money(summary.charges_total))
           : null,
         row(
           t('c1.total_to_invoice'),
-          formatMoney(summary.client_total_with_charges, locale),
+          money(summary.client_total_with_charges),
           { strong: true },
         ),
-        // The client reclaims VAT, so the ex-VAT figure is the one that costs
-        // them anything — but the invoice they pay says the gross amount, and
-        // an approver comparing the two should not have to do the sum.
-        row(
-          t('f2.confirm_incl'),
-          formatMoney(summary.client_total_incl
-            + vatCents(summary.charges_total || 0), locale),
-        ),
+        // The client reclaims VAT, so the ex-VAT figure is what it costs them —
+        // but the invoice they pay says the gross amount, and an approver
+        // comparing the two should not have to do the sum.
+        row(t('f2.confirm_vat', { percent: String(vatPercent) }),
+          money(summary.client_total_vat + chargesVat)),
+        row(t('f2.confirm_incl'),
+          money(summary.client_total_incl + chargesVat), { strong: true }),
       ].filter(Boolean)),
     ]),
     el('p', { class: 'fees__note' }, t('common.ex_vat')),
   ]);
 }
 
-/** Ops only. Never rendered for a freelancer or an approver. */
+/**
+ * Ops only — the one view that sees both sides at once. Never rendered for a
+ * freelancer or an approver.
+ */
 export function platformFeeTable(summary) {
   const locale = getIntlLocale();
   const money = (cents) => formatMoney(cents, locale);
@@ -119,9 +125,10 @@ export function platformFeeTable(summary) {
       el('caption', { class: 'visually-hidden' }, t('fee.platform_take')),
       el('tbody', [
         row(t('fee.client_total'), money(summary.client_total)),
-        row(t('fee.freelancer_gross'), money(summary.freelancer_gross)),
-        row(t('fee.freelancer_fee'), money(summary.freelancer_fee)),
-        row(t('fee.freelancer_net'), money(summary.freelancer_net)),
+        row(t('fee.client_fee'), money(summary.client_fee_total)),
+        row(t('fee.agreed_total'), money(summary.agreed_total)),
+        row(t('fee.freelancer_fee'), money(summary.freelancer_fee_total)),
+        row(t('fee.freelancer_total'), money(summary.freelancer_total)),
         row(t('fee.platform_take'), money(summary.platform_take), { strong: true }),
       ]),
     ]),

@@ -28,8 +28,8 @@ import {
   assertNoForbiddenProjectFields, assertNoForbiddenProfileFields,
 } from '../domain/marketplace.js';
 import {
-  deriveFreelancerRate, parseRateToCents, DEFAULT_CLIENT_SIDE_SPREAD,
-  MIN_CLIENT_RATE, MAX_CLIENT_RATE,
+  clientRate, freelancerRate, parseRateToCents,
+  MIN_AGREED_RATE, MAX_AGREED_RATE, DEFAULT_CLIENT_FEE, DEFAULT_FREELANCER_FEE,
 } from '../domain/money.js';
 import { createMockAdapter } from '../data/mock/mockAdapter.js';
 import { save, __testing } from '../data/mock/store.js';
@@ -41,7 +41,7 @@ const VALID_PROJECT = Object.freeze({
   title: 'Werkvoorbereider utiliteitsbouw',
   description: 'Een omschrijving die lang genoeg is om een beslissing op te nemen, '
     + 'met genoeg detail over het werk.',
-  client_rate_per_hour: 10000,
+  agreed_rate_per_hour: 9500,
   indicative_hours_per_week: 32,
   start_date: '2026-10-01',
   duration_months: 6,
@@ -56,30 +56,30 @@ const APPROVER = { id: 'usr_a', role: ROLE.APPROVER, organization_id: 'org_1' };
 
 /* ------------------------------------------------------------------ */
 
-describe('Marketplace — the rate the freelancer sees', () => {
-  it('derives the freelancer rate from the budget, never the other way round', () => {
-    assert.equal(deriveFreelancerRate(10000), 9500, 'a €100 budget shows as €95');
-    assert.equal(deriveFreelancerRate(11500), 11000);
-    assert.equal(deriveFreelancerRate(10000, 0), 10000, 'a zero spread shows the budget');
-  });
-
-  it('never goes negative on a budget below the spread', () => {
-    assert.equal(deriveFreelancerRate(300, DEFAULT_CLIENT_SIDE_SPREAD), 0);
-  });
-
-  it('stores both rates on a normalised project', () => {
+describe('Marketplace — one rate on a posting', () => {
+  it('stores exactly one rate, and derives the other two', () => {
     const p = normaliseProject(VALID_PROJECT);
-    assert.equal(p.client_rate_per_hour, 10000);
-    assert.equal(p.freelancer_rate_per_hour, 9500);
+    assert.equal(p.agreed_rate_per_hour, 9500);
+    assert.equal(p.client_rate_per_hour, undefined,
+      'a posting stores no client rate — it is derived when needed');
+    assert.equal(p.freelancer_rate_per_hour, undefined);
+
+    assert.equal(clientRate(p.agreed_rate_per_hour, DEFAULT_CLIENT_FEE), 10000);
+    assert.equal(freelancerRate(p.agreed_rate_per_hour, DEFAULT_FREELANCER_FEE), 9300);
   });
 
-  it('strips the budget from anything a freelancer is handed', () => {
+  it('shows a freelancer the agreed rate, and no company-only field', () => {
     const stored = { id: 'prj_1', ...normaliseProject(VALID_PROJECT), created_by: 'usr_c' };
     const shown = projectForFreelancer(stored);
-    assert.equal(shown.client_rate_per_hour, undefined, 'the budget leaked');
-    assert.equal(shown.created_by, undefined, 'the author leaked');
-    assert.equal(shown.freelancer_rate_per_hour, 9500, 'their own rate survived');
-    assert.ok(!Object.keys(shown).includes('client_rate_per_hour'));
+    assert.equal(shown.agreed_rate_per_hour, 9500, 'the agreed rate is theirs to see');
+    assert.equal(shown.created_by, undefined, 'the author is not');
+  });
+
+  it('never lets one stored rate drift from another, because there is only one', () => {
+    const p = normaliseProject(VALID_PROJECT);
+    const rateFields = Object.keys(p).filter((k) => /_rate_per_hour$/.test(k));
+    assert.deepEqual(rateFields, ['agreed_rate_per_hour'],
+      'two stored rates that must differ by a fee are a pair that can drift');
   });
 
   it('parses a rate typed as euros', () => {
@@ -99,7 +99,7 @@ describe('Marketplace — project validation', () => {
       MARKET_ERROR.TITLE_REQUIRED);
     await assert.throws(() => normaliseProject({ ...VALID_PROJECT, description: 'te kort' }),
       MARKET_ERROR.DESCRIPTION_REQUIRED);
-    await assert.throws(() => normaliseProject({ ...VALID_PROJECT, client_rate_per_hour: null }),
+    await assert.throws(() => normaliseProject({ ...VALID_PROJECT, agreed_rate_per_hour: null }),
       MARKET_ERROR.RATE_REQUIRED);
     await assert.throws(() => normaliseProject({ ...VALID_PROJECT, start_date: '' }),
       MARKET_ERROR.START_DATE_REQUIRED);
@@ -107,11 +107,11 @@ describe('Marketplace — project validation', () => {
 
   it('bounds the budget', async () => {
     await assert.throws(
-      () => normaliseProject({ ...VALID_PROJECT, client_rate_per_hour: MIN_CLIENT_RATE - 1 }),
+      () => normaliseProject({ ...VALID_PROJECT, agreed_rate_per_hour: MIN_AGREED_RATE - 1 }),
       MARKET_ERROR.RATE_OUT_OF_RANGE,
     );
     await assert.throws(
-      () => normaliseProject({ ...VALID_PROJECT, client_rate_per_hour: MAX_CLIENT_RATE + 1 }),
+      () => normaliseProject({ ...VALID_PROJECT, agreed_rate_per_hour: MAX_AGREED_RATE + 1 }),
       MARKET_ERROR.RATE_OUT_OF_RANGE,
     );
   });
@@ -354,8 +354,7 @@ describe('Compliance §6 — a hire must not carry scope onto the assignment', (
     id: 'prj_1',
     organization_id: 'org_1',
     title: 'Werkvoorbereider',
-    client_rate_per_hour: 10000,
-    freelancer_rate_per_hour: 9500,
+    agreed_rate_per_hour: 9500,
     indicative_hours_per_week: 32,
     start_date: '2026-10-01',
   };
@@ -383,13 +382,19 @@ describe('Compliance §6 — a hire must not carry scope onto the assignment', (
   });
 
   it('keeps both rates, and prefers the rate that was actually negotiated', () => {
-    assert.equal(assignment.client_rate_per_hour, 10000);
-    assert.equal(assignment.freelancer_rate_per_hour, 9500);
+    assert.equal(assignment.agreed_rate_per_hour, 9500, 'the rate that was agreed');
+    assert.equal(assignment.client_fee_per_hour, DEFAULT_CLIENT_FEE);
+    assert.equal(assignment.freelancer_fee_per_hour, DEFAULT_FREELANCER_FEE);
+    assert.equal(clientRate(assignment.agreed_rate_per_hour,
+      assignment.client_fee_per_hour), 10000, 'the company is invoiced 100');
+    assert.equal(freelancerRate(assignment.agreed_rate_per_hour,
+      assignment.freelancer_fee_per_hour), 9300, 'the freelancer invoices 93');
 
     const negotiated = buildAssignmentFromHire(
       project, { ...application, proposed_rate_per_hour: 9700 }, 'asg_2',
     );
-    assert.equal(negotiated.freelancer_rate_per_hour, 9700);
+    assert.equal(negotiated.agreed_rate_per_hour, 9700,
+      'a rate the freelancer proposed becomes the agreed rate');
   });
 
   it('records where it came from', () => {
@@ -435,12 +440,13 @@ describe('Marketplace loop — apply, screen, hire', () => {
     const board = await a.listOpenProjects();
     assert.ok(board.length > 0, 'the board has something on it');
     for (const row of board) {
-      assert.equal(row.client_rate_per_hour, undefined, 'the budget leaked onto the board');
+      assert.equal(row.created_by, undefined, 'a company-only field leaked onto the board');
+      assert.ok(row.agreed_rate_per_hour > 0, 'the agreed rate is shown');
     }
 
     const view = await a.getProject(board[0].id);
-    assert.equal(view.project.client_rate_per_hour, undefined, 'the budget leaked onto detail');
-    assert.ok(view.project.freelancer_rate_per_hour > 0);
+    assert.equal(view.project.created_by, undefined, 'a company-only field leaked onto detail');
+    assert.ok(view.project.agreed_rate_per_hour > 0);
 
     restoreSnapshot();
   });
@@ -612,7 +618,7 @@ describe('Marketplace loop — apply, screen, hire', () => {
 
     const created = await a.saveProject(null, VALID_PROJECT);
     assert.equal(created.project.status, PROJECT_STATUS.DRAFT, 'a new project starts as a draft');
-    assert.equal(created.project.freelancer_rate_per_hour, 9500);
+    assert.equal(created.project.agreed_rate_per_hour, 9500);
 
     const published = await a.transitionProject(created.project.id, 'publish');
     assert.equal(published.project.status, PROJECT_STATUS.OPEN);

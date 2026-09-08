@@ -1,10 +1,15 @@
 /**
  * M5 / M6 — a company's own projects, and the form that creates one.
  *
- * The form asks for the company's budget and shows, live, what the freelancer
- * will see. That is deliberate: the spread is not a secret from the company,
- * only from the freelancer, and a company that understands the two numbers is
- * less likely to argue about the invoice later.
+ * The form asks for the rate offered to the freelancer — the agreed rate, the
+ * number both sides will recognise — and shows live what the company itself
+ * will pay once the platform's fee is added. Two numbers, both the company's
+ * business, neither hidden. A company that understands them is less likely to
+ * argue about the invoice later.
+ *
+ * The freelancer's own fee is not shown here and should not be. Each side sees
+ * the agreed rate and its own fee; what the other party pays the platform is
+ * not part of their arrangement.
  *
  * COMPLIANCE §6. The description field's help text asks for the work and the
  * outcome, not the working hours, and the scope field says in as many words
@@ -19,7 +24,7 @@ import {
   notice, emptyState, labelBadge, textField, selectField,
 } from '../components/ui.js';
 import {
-  formatMoney, parseRateToCents, deriveFreelancerRate, DEFAULT_CLIENT_SIDE_SPREAD,
+  formatMoney, parseRateToCents, clientRate, DEFAULT_CLIENT_FEE,
 } from '../../domain/money.js';
 import { formatDate, todayIso } from '../../domain/dates.js';
 import { navigate } from '../../app/router.js';
@@ -86,10 +91,11 @@ export async function renderCompanyProjects(container, { adapter }) {
             labelBadge('projectstatus', p.status),
           ]),
           el('p', { class: 'card__meta' }, [
-            formatMoney(p.client_rate_per_hour, locale) + ' / ' + t('common.hours_short'),
+            formatMoney(p.agreed_rate_per_hour, locale) + ' / ' + t('common.hours_short'),
             el('span', { class: 'sep', 'aria-hidden': 'true' }, '·'),
             t('form.derived', {
-              amount: formatMoney(p.freelancer_rate_per_hour, locale),
+              amount: formatMoney(clientRate(p.agreed_rate_per_hour,
+                p.client_fee_per_hour), locale),
             }),
             el('span', { class: 'sep', 'aria-hidden': 'true' }, '·'),
             formatDate(p.start_date, locale),
@@ -180,8 +186,8 @@ export async function renderProjectForm(container, { adapter, projectId }) {
   const budget = textField({
     id: 'f-budget',
     label: t('form.budget'),
-    value: p.client_rate_per_hour
-      ? (p.client_rate_per_hour / 100).toFixed(2).replace('.', ',')
+    value: p.agreed_rate_per_hour
+      ? (p.agreed_rate_per_hour / 100).toFixed(2).replace('.', ',')
       : '',
     help: t('form.budget_help'),
     inputmode: 'decimal',
@@ -229,7 +235,7 @@ export async function renderProjectForm(container, { adapter, projectId }) {
     const cents = parseRateToCents(budget.input.value);
     derived.textContent = Number.isInteger(cents)
       ? t('form.derived', {
-        amount: formatMoney(deriveFreelancerRate(cents, DEFAULT_CLIENT_SIDE_SPREAD), locale),
+        amount: formatMoney(clientRate(cents, DEFAULT_CLIENT_FEE), locale),
       })
       : '';
   }
@@ -245,7 +251,7 @@ export async function renderProjectForm(container, { adapter, projectId }) {
       const view = await adapter.saveProject(editing ? projectId : null, {
         title: title.input.value,
         description: description.input.value,
-        client_rate_per_hour: Number.isNaN(cents) ? null : cents,
+        agreed_rate_per_hour: Number.isNaN(cents) ? null : cents,
         indicative_hours_per_week: hours.input.value,
         start_date: start.input.value,
         duration_months: duration.input.value,

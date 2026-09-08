@@ -25,10 +25,10 @@ import {
   ALLOWED_PROFILE_FIELDS,
 } from './model.js';
 import {
-  deriveFreelancerRate,
-  MIN_CLIENT_RATE,
-  MAX_CLIENT_RATE,
-  DEFAULT_CLIENT_SIDE_SPREAD,
+  MIN_AGREED_RATE,
+  MAX_AGREED_RATE,
+  DEFAULT_CLIENT_FEE,
+  DEFAULT_FREELANCER_FEE,
 } from './money.js';
 import { DomainError } from './rules.js';
 
@@ -149,12 +149,13 @@ export function assertNoForbiddenProjectFields(project) {
 /**
  * Validate and normalise a project posting.
  *
- * The company supplies its budget. The freelancer rate is *derived* here and
- * stored alongside it, never typed. That is the whole mechanism by which the
- * spread stays invisible on the board: there is no field a company could fill
- * in wrongly, and no place the two numbers can drift apart.
+ * The company states the rate it is offering the freelancer — the agreed rate,
+ * the number both sides will recognise. What the company itself pays (agreed +
+ * client fee) and what the freelancer invoices (agreed − freelancer fee) are
+ * derived from it wherever they are needed, never stored twice and never
+ * typed. One stored number cannot drift out of step with itself.
  */
-export function normaliseProject(input, spread = DEFAULT_CLIENT_SIDE_SPREAD) {
+export function normaliseProject(input) {
   const title = String(input.title || '').trim();
   if (title.length < 3) {
     throw new DomainError(MARKET_ERROR.TITLE_REQUIRED, 'A project needs a title');
@@ -168,13 +169,13 @@ export function normaliseProject(input, spread = DEFAULT_CLIENT_SIDE_SPREAD) {
     );
   }
 
-  const clientRate = input.client_rate_per_hour;
-  if (clientRate === null || clientRate === undefined || Number.isNaN(clientRate)) {
-    throw new DomainError(MARKET_ERROR.RATE_REQUIRED, 'A project needs a budget');
+  const agreedRate = input.agreed_rate_per_hour;
+  if (agreedRate === null || agreedRate === undefined || Number.isNaN(agreedRate)) {
+    throw new DomainError(MARKET_ERROR.RATE_REQUIRED, 'A project needs an hourly rate');
   }
-  if (!Number.isInteger(clientRate) || clientRate < MIN_CLIENT_RATE || clientRate > MAX_CLIENT_RATE) {
-    throw new DomainError(MARKET_ERROR.RATE_OUT_OF_RANGE, 'Budget is outside the accepted range', {
-      min: MIN_CLIENT_RATE, max: MAX_CLIENT_RATE,
+  if (!Number.isInteger(agreedRate) || agreedRate < MIN_AGREED_RATE || agreedRate > MAX_AGREED_RATE) {
+    throw new DomainError(MARKET_ERROR.RATE_OUT_OF_RANGE, 'Rate is outside the accepted range', {
+      min: MIN_AGREED_RATE, max: MAX_AGREED_RATE,
     });
   }
 
@@ -204,8 +205,7 @@ export function normaliseProject(input, spread = DEFAULT_CLIENT_SIDE_SPREAD) {
   return {
     title: title.slice(0, MAX_TITLE),
     description: description.slice(0, MAX_DESCRIPTION),
-    client_rate_per_hour: clientRate,
-    freelancer_rate_per_hour: deriveFreelancerRate(clientRate, spread),
+    agreed_rate_per_hour: agreedRate,
     indicative_hours_per_week: hours,
     start_date: input.start_date,
     duration_months: duration,
@@ -234,17 +234,22 @@ export function assertProjectTransition(project, action) {
 }
 
 /**
- * What a freelancer is allowed to see of a project. The client budget is
- * removed here rather than in a template, so a new screen cannot leak it by
- * forgetting to omit a field.
+ * What a freelancer is allowed to see of a project.
+ *
+ * This used to strip the client's budget, back when a posting carried two
+ * rates and the spread was hidden. It no longer does, because there is only
+ * one rate on a posting — the agreed rate, which both sides are meant to see
+ * and negotiate on. The fees live on the assignment and each side is shown
+ * only its own.
+ *
+ * The function stays because `created_by` is still nobody's business, and
+ * because the moment a posting acquires a field that is company-only, this is
+ * where it gets removed — in the data layer, not in whichever template
+ * happens to render it.
  */
 export function projectForFreelancer(project) {
   if (!project) return null;
-  const {
-    client_rate_per_hour: _budget,
-    created_by: _author,
-    ...visible
-  } = project;
+  const { created_by: _author, ...visible } = project;
   return visible;
 }
 
@@ -468,10 +473,13 @@ export function buildAssignmentFromHire(project, application, newId, now = new D
     // Ops names the approver when activating. The hiring manager who took the
     // screening call is a lead, not necessarily who signs off hours.
     approver_id: null,
-    client_rate_per_hour: project.client_rate_per_hour,
-    freelancer_rate_per_hour: application.proposed_rate_per_hour
-      || project.freelancer_rate_per_hour,
-    freelancer_fee_per_hour: 200,
+    // The rate that was actually agreed: what the freelancer asked for if they
+    // proposed one, otherwise what the posting offered. The two fees are
+    // platform terms and are applied to it, not negotiated per hire.
+    agreed_rate_per_hour: application.proposed_rate_per_hour
+      || project.agreed_rate_per_hour,
+    client_fee_per_hour: DEFAULT_CLIENT_FEE,
+    freelancer_fee_per_hour: DEFAULT_FREELANCER_FEE,
     fixed_fee_amount: null,
     fixed_fee_payer: null,
     hour_increment: 0.25,

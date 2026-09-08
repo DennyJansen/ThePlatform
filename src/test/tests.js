@@ -11,7 +11,7 @@ import { describe, it, assert } from './runner.js';
 
 import {
   computeFees, quantiseHours, lineTotalCents, parseHours,
-  ratesAreCoherent, round2, vatCents,
+  ratesAreCoherent, round2, vatCents, clientRate, freelancerRate,
 } from '../domain/money.js';
 import {
   monthDays, daysInMonth, isWeekend, withinAssignment, periodKey, addDays,
@@ -36,8 +36,8 @@ const ASSIGNMENT = Object.freeze({
   freelancer_id: 'usr_f',
   approver_id: 'usr_a',
   organization_id: 'org_1',
-  client_rate_per_hour: 10000,
-  freelancer_rate_per_hour: 9500,
+  agreed_rate_per_hour: 9500,
+  client_fee_per_hour: 500,
   freelancer_fee_per_hour: 200,
   hour_increment: 0.25,
   start_date: '2026-01-01',
@@ -56,25 +56,47 @@ const PERIOD = Object.freeze({
 
 /* ------------------------------------------------------------------ */
 
-describe('Money — the fee arithmetic of spec section 3', () => {
-  it('reproduces the worked example: 100 / 95 / 2 nets 93 and takes 7', () => {
-    const fees = computeFees(ASSIGNMENT, 1);
-    assert.equal(fees.client_total, 10000, 'client invoiced');
-    assert.equal(fees.freelancer_gross, 9500, 'freelancer gross');
-    assert.equal(fees.freelancer_fee, 200, 'deduction');
-    assert.equal(fees.freelancer_net, 9300, 'freelancer net');
-    assert.equal(fees.platform_take, 700, 'platform take');
+describe('Money — one agreed rate, two fees pointing outward', () => {
+  it('derives both invoiced rates from the agreed rate', () => {
+    assert.equal(clientRate(9500, 500), 10000, 'the company is invoiced 95 + 5');
+    assert.equal(freelancerRate(9500, 200), 9300, 'the freelancer invoices 95 - 2');
+    assert.equal(clientRate(9500, 0), 9500, 'a zero fee changes nothing');
   });
 
-  it('keeps platform take equal to client total minus freelancer net, at any hours', () => {
+  it('never lets the freelancer rate go negative', () => {
+    assert.equal(freelancerRate(150, 200), 0);
+  });
+
+  it('reproduces the worked example: 95 agreed, 93 out, 100 in, 7 kept', () => {
+    const fees = computeFees(ASSIGNMENT, 1);
+    assert.equal(fees.agreed_total, 9500, 'the anchor, invoiced by nobody');
+    assert.equal(fees.freelancer_fee_total, 200);
+    assert.equal(fees.freelancer_total, 9300, 'what the freelancer invoices');
+    assert.equal(fees.client_fee_total, 500);
+    assert.equal(fees.client_total, 10000, 'what the company is invoiced');
+    assert.equal(fees.platform_take, 700);
+  });
+
+  it('keeps platform take equal to client total minus freelancer total, at any hours', () => {
     for (const hours of [0, 0.25, 7.75, 160, 168.5, 999.25]) {
       const f = computeFees(ASSIGNMENT, hours);
       assert.equal(
         f.platform_take,
-        f.client_total - f.freelancer_net,
+        f.client_total - f.freelancer_total,
         'invariant broken at ' + hours + ' hours',
       );
+      assert.equal(
+        f.platform_take,
+        f.client_fee_total + f.freelancer_fee_total,
+        'the take is the two fees and nothing else, at ' + hours + ' hours',
+      );
     }
+  });
+
+  it('brackets the agreed rate between the two invoiced totals', () => {
+    const f = computeFees(ASSIGNMENT, 168);
+    assert.ok(f.freelancer_total < f.agreed_total, 'the freelancer invoices less');
+    assert.ok(f.client_total > f.agreed_total, 'the company is invoiced more');
   });
 
   it('does not drift on repeated cent arithmetic', () => {
@@ -105,11 +127,13 @@ describe('Money — the fee arithmetic of spec section 3', () => {
 
   it('refuses incoherent rates', () => {
     assert.ok(ratesAreCoherent(ASSIGNMENT));
-    assert.ok(!ratesAreCoherent({ ...ASSIGNMENT, freelancer_rate_per_hour: 11000 }),
-      'freelancer above client rate');
     assert.ok(!ratesAreCoherent({ ...ASSIGNMENT, freelancer_fee_per_hour: 10000 }),
-      'deduction above the freelancer rate');
-    assert.ok(!ratesAreCoherent({ ...ASSIGNMENT, client_rate_per_hour: 100.5 }),
+      'a fee above the agreed rate would invoice a negative amount');
+    assert.ok(!ratesAreCoherent({ ...ASSIGNMENT, client_fee_per_hour: -100 }),
+      'a negative client fee means the platform pays to place someone');
+    assert.ok(!ratesAreCoherent({ ...ASSIGNMENT, agreed_rate_per_hour: 0 }),
+      'a zero agreed rate is not an agreement');
+    assert.ok(!ratesAreCoherent({ ...ASSIGNMENT, agreed_rate_per_hour: 95.5 }),
       'rates must be whole cents');
   });
 
@@ -121,54 +145,56 @@ describe('Money — the fee arithmetic of spec section 3', () => {
 });
 
 describe('VAT — spec §8.9, answered: every rate is ex VAT', () => {
-  it('adds VAT to the hourly rates, not the other way round', () => {
+  it('adds VAT to each side’s own invoice', () => {
     const f = computeFees(ASSIGNMENT, 1);
-    assert.equal(f.client_total, 10000, 'the client rate is ex VAT');
+    assert.equal(f.client_total, 10000, 'what the company is invoiced, ex VAT');
+    assert.equal(f.client_total_vat, 2100);
     assert.equal(f.client_total_incl, 12100, '100.00 + 21%');
-    assert.equal(f.freelancer_gross, 9500, 'the freelancer rate is ex VAT');
-    assert.equal(f.freelancer_gross_incl, 11495, '95.00 + 21%');
+
+    assert.equal(f.freelancer_total, 9300, 'what the freelancer invoices, ex VAT');
+    assert.equal(f.freelancer_total_vat, 1953);
+    assert.equal(f.freelancer_total_incl, 11253, '93.00 + 21%');
   });
 
-  it('treats the per-hour deduction as a supply that carries its own VAT', () => {
+  it('charges VAT on nobody’s behalf for the agreed rate', () => {
     const f = computeFees(ASSIGNMENT, 1);
-    assert.equal(f.freelancer_fee, 200, '2.00 ex VAT');
-    assert.equal(f.freelancer_fee_vat, 42, '21% of 2.00');
-    assert.equal(f.freelancer_fee_incl, 242,
-      'the platform bills 2.42, not 2.00 — it is a service, not a discount');
+    // 95.00 is the anchor, not an invoice. Nothing is charged on it, and no
+    // VAT figure is derived from it — which is the point of keeping it apart
+    // from the two totals that do get invoiced.
+    assert.equal(f.agreed_total, 9500);
+    assert.equal(f.agreed_total_vat, undefined);
   });
 
-  it('nets the two supplies only in cash, never before VAT', () => {
+  it('applies the fees ex VAT, before any VAT is added', () => {
     const f = computeFees(ASSIGNMENT, 1);
-    assert.equal(f.freelancer_cash, 11253, '114.95 in, 2.42 out');
-    // Netting first would give VAT on 93.00 = 19.53, and a total of 112.53 by
-    // coincidence — but it understates the freelancer's turnover by 2.00 and
-    // hides an input VAT credit they are entitled to.
-    assert.equal(vatCents(f.freelancer_net), 1953);
-    assert.ok(f.freelancer_gross_vat !== vatCents(f.freelancer_net),
-      'VAT on the gross is not VAT on the net');
+    assert.equal(f.freelancer_fee_total, 200, '2.00 ex VAT, deducted from 95.00');
+    assert.equal(f.client_fee_total, 500, '5.00 ex VAT, added to 95.00');
+    // The freelancer's VAT is 21% of 93.00, not of 95.00. Charging on the
+    // agreed rate and then deducting would overstate their turnover by 2.00
+    // an hour and hand the Belastingdienst VAT on money they never received.
+    assert.equal(f.freelancer_total_vat, vatCents(9300));
+    assert.ok(f.freelancer_total_vat !== vatCents(f.agreed_total));
   });
 
-  it('leaves the ex-VAT model of spec §3 untouched', () => {
+  it('leaves the platform take at 7.00 ex VAT', () => {
     const f = computeFees(ASSIGNMENT, 1);
-    assert.equal(f.freelancer_net, 9300, 'what the freelancer keeps is still 93.00');
-    assert.equal(f.platform_take, 700, 'the platform still takes 7.00 ex VAT');
-    assert.equal(f.platform_take, f.client_total - f.freelancer_net);
+    assert.equal(f.platform_take, 700);
+    assert.equal(f.platform_take, f.client_total - f.freelancer_total);
   });
 
   it('holds at realistic monthly volumes', () => {
     const f = computeFees(ASSIGNMENT, 168);
+    assert.equal(f.agreed_total, 1596000, '168h at 95.00');
     assert.equal(f.client_total, 1680000, '168h at 100.00');
     assert.equal(f.client_total_incl, 2032800, 'plus 21%');
-    assert.equal(f.freelancer_gross, 1596000, '168h at 95.00');
-    assert.equal(f.freelancer_gross_incl, 1931160, 'plus 21%');
-    assert.equal(f.freelancer_fee, 33600, '168h at 2.00');
-    assert.equal(f.freelancer_fee_incl, 40656, 'plus 21%');
-    assert.equal(f.freelancer_cash, 1931160 - 40656);
+    assert.equal(f.freelancer_total, 1562400, '168h at 93.00');
+    assert.equal(f.freelancer_total_incl, 1890504, 'plus 21%');
+    assert.equal(f.platform_take, 117600, '168h at 7.00');
   });
 
   /**
    * VAT is applied once, to the line total. Applying it per hour and then
-   * multiplying would round 19.95 per hour and drift; this asserts the two
+   * multiplying would round 19.53 per hour and drift; this asserts the two
    * agree, which is what stops an invoice disagreeing with the confirmation
    * screen by a cent or two at high hour counts.
    */
@@ -176,14 +202,14 @@ describe('VAT — spec §8.9, answered: every rate is ex VAT', () => {
     for (const hours of [1, 7.25, 168, 173.75, 999.5]) {
       const f = computeFees(ASSIGNMENT, hours);
       assert.equal(
-        f.freelancer_gross_vat,
-        vatCents(lineTotalCents(hours, ASSIGNMENT.freelancer_rate_per_hour)),
-        'VAT drifted at ' + hours + ' hours',
+        f.freelancer_total_vat,
+        vatCents(lineTotalCents(hours, freelancerRate(9500, 200))),
+        'freelancer VAT drifted at ' + hours + ' hours',
       );
       assert.equal(
-        f.freelancer_cash,
-        f.freelancer_gross_incl - f.freelancer_fee_incl,
-        'cash must be the two gross figures, netted',
+        f.client_total_vat,
+        vatCents(lineTotalCents(hours, clientRate(9500, 500))),
+        'client VAT drifted at ' + hours + ' hours',
       );
     }
   });
@@ -192,7 +218,7 @@ describe('VAT — spec §8.9, answered: every rate is ex VAT', () => {
     assert.equal(computeFees(ASSIGNMENT, 1).vat_rate_bp, 2100);
     const reduced = computeFees(ASSIGNMENT, 1, 900);
     assert.equal(reduced.vat_rate_bp, 900);
-    assert.equal(reduced.freelancer_fee_vat, 18, '9% of 2.00');
+    assert.equal(reduced.freelancer_total_vat, 837, '9% of 93.00');
   });
 });
 
@@ -372,7 +398,7 @@ describe('Entry validation', () => {
   it('refuses to submit against incoherent rates', async () => {
     await assert.throws(
       () => assertSubmittable(PERIOD, [{ date: '2026-03-02', hours: 8 }],
-        { ...ASSIGNMENT, freelancer_rate_per_hour: 20000 }),
+        { ...ASSIGNMENT, freelancer_fee_per_hour: 20000 }),
       ERROR.RATES_INCOHERENT,
     );
   });
@@ -391,8 +417,9 @@ describe('Submission summary — what the confirmation dialog shows', () => {
     assert.equal(summary.total_hours, 20.25);
     assert.equal(summary.days_with_hours, 3);
     assert.equal(summary.client_total, 202500, '20.25h at 100.00');
-    assert.equal(summary.freelancer_net, 188325, '20.25h at 93.00');
+    assert.equal(summary.freelancer_total, 188325, '20.25h at 93.00');
     assert.equal(summary.platform_take, 202500 - 188325);
+    assert.equal(summary.agreed_total, 192375, '20.25h at 95.00, invoiced by nobody');
   });
 
   it('adds non-rejected charges to the client total only', () => {
@@ -404,7 +431,8 @@ describe('Submission summary — what the confirmation dialog shows', () => {
       ASSIGNMENT, charges);
     assert.equal(summary.charges_total, 4000, 'the rejected claim is excluded');
     assert.equal(summary.client_total_with_charges, 10000 + 4000);
-    assert.equal(summary.freelancer_net, 9300, 'charges do not move the hourly net');
+    assert.equal(summary.freelancer_total, 9300,
+      'an expense on the client side does not change what the freelancer invoices');
   });
 });
 

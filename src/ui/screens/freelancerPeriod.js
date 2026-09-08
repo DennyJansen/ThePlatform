@@ -19,6 +19,7 @@ import { t, tError, getIntlLocale } from '../../i18n/index.js';
 import { statusBadge, notice, confirmDialog } from '../components/ui.js';
 import { entryGrid } from '../components/entryGrid.js';
 import { freelancerFeeTable } from '../components/feeTable.js';
+import { freelancerRate } from '../../domain/money.js';
 import { formatMonth, formatDateTime, currentPeriod } from '../../domain/dates.js';
 import { formatMoney, DEFAULT_HOUR_INCREMENT } from '../../domain/money.js';
 import { PERIOD_STATUS } from '../../domain/model.js';
@@ -67,7 +68,8 @@ function periodHeader(view) {
         assignment.title,
         el('span', { class: 'sep', 'aria-hidden': 'true' }, '·'),
         t('period.rate_unit_ex_vat', {
-          amount: formatMoney(assignment.freelancer_rate_per_hour, locale),
+          amount: formatMoney(freelancerRate(assignment.agreed_rate_per_hour,
+            assignment.freelancer_fee_per_hour), locale),
         }),
         period.version > 1
           ? [
@@ -166,7 +168,7 @@ export async function renderFreelancerPeriod(container, { adapter, session, peri
         lead: t('f2.confirm_lead'),
         danger: true,
         confirmLabel: t('f2.confirm_commit'),
-        body: freelancerFeeTable(summary, saved.assignment),
+        body: freelancerFeeTable(summary),
         onConfirm: async () => {
           try {
             return await adapter.submitPeriod(saved.period.id);
