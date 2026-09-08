@@ -23,85 +23,75 @@ once the value is set. Billing it is step 4 work.
 and the €2 deduction.
 
 That the €2 is *ex VAT* settles more than the number. A discount on someone's
-rate carries no VAT of its own; a €2 that has 21% added to it is a **taxable
-supply from the platform to the freelancer** — an intermediation service they
-buy, and whose VAT they reclaim. So there are two supplies, not one netted
-amount:
+rate carries no VAT of its own; a €2 that has 21% added to it is a **service
+the freelancer buys**, and whose VAT they reclaim. So there are two amounts,
+not one netted figure:
 
 | | Ex VAT | VAT 21% | Incl. |
 |---|---|---|---|
-| Freelancer → platform (self-billed) | 95.00 | 19.95 | 114.95 |
-| Platform → freelancer (the fee) | 2.00 | 0.42 | 2.42 |
-| **Cash to the freelancer** | | | **112.53** |
+| The freelancer's hours | 95.00 | 19.95 | 114.95 |
+| The platform's fee | 2.00 | 0.42 | 2.42 |
+| **Net to the freelancer** | | | **112.53** |
 
 €93.00/hour is still what the freelancer keeps once VAT settles through their
-return. It is not what arrives in the bank, and the confirmation screen now
-shows both.
+return. It is not the figure that moves, and the confirmation screen shows
+both.
 
-**Implemented in:** `computeFees()` in `src/domain/money.js`, which returns
-ex-VAT, VAT and inclusive figures per supply plus `freelancer_cash`. Tested
-under "VAT — spec §8.9, answered". VAT is applied once to the line total, not
-per hour and multiplied, with a test that the two agree at awkward hour counts.
+**Implemented in:** `computeFees()` in `src/domain/money.js`. Tested under
+"VAT — spec §8.9, answered". VAT is applied once to the line total, not per
+hour and multiplied, with a test that the two agree at awkward hour counts.
 
-**Also answered: two documents, netted in payment.** So a settled month
-produces **three** documents in total, not the two spec §3 listed:
+### 2b. Who raises the invoices — ANSWERED: not the platform
 
-| # | From → to | Amount | Notes |
-|---|---|---|---|
-| 1 | platform → client | hours × €100 + VAT | payment terms from the org |
-| 2 | freelancer → platform | hours × €95 + VAT | self-billed, in their name |
-| 3 | platform → freelancer | hours × €2 + VAT | the fee, as its own supply |
+**Decided:** the freelancer and the company each raise their own invoices, in
+their own systems. The platform generates no documents, allocates no invoice
+numbers, and does not self-bill.
 
-2 and 3 net when the money moves. They are **not** netted before VAT and they
-are **not** one document. The fee never appears as a negative line on the
-freelancer's own sales invoice.
+Three consequences worth having written down:
 
-**Implemented in:** `buildInvoiceSet()` in `src/domain/invoice.js`, plus
-`INVOICE_DIRECTION.PLATFORM_FEE_TO_FREELANCER` and migration
-`004-invoices.sql`. Tested under "Invoices — three documents". The suite
-asserts the invoice totals equal the figures the freelancer already approved
-on the confirmation screen, which is spec §3's guarantee reaching all the way
-to the document.
+1. **Spec §8.1 stops being load-bearing.** The self-billing authorisation
+   clause existed so the platform could invoice in the freelancer's name. It no
+   longer does, so that clause can come out of the terms — and the invoice
+   numbering problem it created (whose sequence does a self-billed invoice
+   belong to?) disappears with it. That was the hardest unsolved item on this
+   list an hour ago; this decision deletes it rather than answering it.
+2. **§3's guarantee weakens, and that is the point of the system.** "The
+   approved number and the invoiced number are the same number *by
+   construction*" becomes "*…if whoever raises the invoice copies it
+   correctly*". The platform still freezes, versions and audits the figure; the
+   last step out to a document is now manual and invisible from here. That is
+   the difference between a billing system and an approval tool, and it is a
+   deliberate trade rather than an oversight.
+3. **`invoiced` and `paid` stay** as period statuses, set by ops against
+   documents raised elsewhere — which is what §1 already said about payment
+   ("manual bank transfer, marked paid in admin").
 
-### 2b. Invoice numbering — NOT answered, and it blocks step 4
+**Removed:** `src/domain/invoice.js`, its tests, `004-invoices.sql`,
+`CONFIG.platform`, and the invoice column on F3. Step 4 of §9 is struck.
 
-Now the real obstacle. Dutch invoices need a sequential, gapless number per
-issuer, and there are three issuers here — two of which are not the platform.
+### 2c. How the platform collects its own fee — OPEN
 
-Document 2 is the problem. A self-billed invoice carries the **freelancer's**
-number sequence, because it is their sales invoice. A freelancer who also
-invoices other clients directly already has a sequence, and this platform does
-not control it. Issuing `2026-0007` in their name while they have used that
-number themselves produces two different invoices with one number, in their
-accounts, under their KvK.
+The one thing this decision leaves dangling, and it is commercial rather than
+technical.
 
-The usual answers, none of them free:
+§3's model has the platform taking €5/hour as the spread between what the
+client pays and what the freelancer gets, plus €2/hour from the freelancer.
+Both assumed the platform sat in the middle of the invoice chain. If the
+freelancer invoices the company directly, it does not:
 
-- **A reserved block or prefix per freelancer.** Agree in the terms that
-  self-billed invoices use a distinct series (e.g. `DENSEN-2026-0007`). Clean,
-  but their accountant has to accept a second series.
-- **The freelancer supplies the next number.** Accurate, and a manual step
-  every month that defeats the point of self-billing.
-- **The platform numbers them and the freelancer excludes that series.** Works
-  where the freelancer bills nobody else; brittle otherwise.
+- **The €5 spread has nowhere to live.** There is one rate on one invoice, and
+  the freelancer is the one sending it. `client_rate_per_hour` and
+  `freelancer_rate_per_hour` being two different numbers only means something
+  if two different invoices exist.
+- **The €2/hour still has to be billed by someone.** Presumably the platform
+  invoices the freelancer for it — which is a platform-issued invoice, and so
+  not quite "no invoicing via the platform".
 
-`formatInvoiceNumber()` exists with a per-issuer prefix and is deliberately
-plain, so nobody mistakes it for a decision. **Answer this with the accountant
-before generating a single real invoice** — renumbering issued invoices is not
-something you can do afterwards.
-
-### 2c. Where invoices are generated
-
-**Decided: server-side, not in the browser.** `buildInvoiceSet` is pure and
-takes its numbers as an argument; it refuses to invent one. A browser that can
-mint invoice numbers can mint two invoices with the same number. Rendering to
-PDF and allocating numbers both belong in an edge function once the Supabase
-step is done.
-
-`CONFIG.platform` holds the platform's own name, KvK, BTW number and address.
-It is empty, and `buildInvoiceSet` refuses to produce a document for a party
-missing them — an incomplete setup fails loudly rather than shipping something
-that looks like an invoice and is not a valid one.
+Nothing is broken and nothing needs changing today: the code still implements
+the §3 model, and the tests still hold it. But the board shows a freelancer
+€95/hour while the company entered €100, and that €5 no longer has a mechanism
+behind it. Worth deciding before the first real placement, because it changes
+what the rate fields mean rather than just what they display.
 
 ### 3. Payout timing versus client payment terms (spec §8.4)
 
@@ -139,8 +129,8 @@ one number. Changing the default changes nothing already stored.
 
 **Decided:** both, Dutch by default. The browser's preference is honoured when
 it matches a table we have; an explicit choice always wins and is remembered.
-**Invoices will be Dutch regardless** — nothing in `src/i18n/` is used for
-invoice output, and step 4 should not reuse it.
+**Invoices are raised outside the platform** (see item 2b), so nothing here
+governs their language any more.
 
 ### 8. Approval window and whether silence constitutes approval (§7)
 
@@ -151,16 +141,16 @@ because nothing happens on that date yet. `due_date_is_binding` gates the UI on
 `auto_approve_enabled`, so enabling the clause turns the date on with it.
 **Change in:** one boolean, once the clause is in the signed terms.
 
-### 9. Self-billing, rejection procedure, termination, rate change (§8)
+### 9. Rejection procedure, termination, rate change (§8)
 
-**Default:** the code assumes the clauses exist as §8 describes them. The
+**Default:** the code assumes these clauses exist as §8 describes them.
+**§8.1 (self-billing) is no longer among them** — see item 2b. The
 rejection path is built as: reject → the decided version is frozen → a
 pre-filled successor is created. If the signed terms describe a different
 correction path, this is the part that changes.
 
 ---
 
----
 
 ## Added by sign-up and CV import
 

@@ -62,9 +62,6 @@ export async function renderHistory(container, { adapter }) {
     el('td', { class: 'num' }, formatHours(row.total_hours, locale)),
     el('td', { class: 'num' }, formatMoney(row.client_total, locale)),
     el('td', statusBadge(row.status)),
-    el('td', row.invoice_pdf
-      ? el('a', { class: 'link', href: row.invoice_pdf, rel: 'noopener' }, t('f3.invoice'))
-      : el('span', { class: 'muted' }, t('f3.no_invoice'))),
   ]));
 
   append(container, [
@@ -74,8 +71,12 @@ export async function renderHistory(container, { adapter }) {
       { label: t('f3.hours'), numeric: true },
       { label: t('f3.amount'), numeric: true },
       { label: t('f3.status') },
-      { label: t('f3.invoice') },
     ], body),
+    // Invoicing happens outside the platform: the freelancer and the company
+    // each raise their own. There is no invoice column, because there is no
+    // invoice here to link to — and a column permanently reading "not yet"
+    // would imply one is coming.
+    el('p', { class: 'hint' }, t('f3.invoicing_note')),
   ]);
 
   focusHeading(container);

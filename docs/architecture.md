@@ -90,14 +90,27 @@ on their rate. So `computeFees` returns two supplies, each with its own VAT,
 and nets them only in cash:
 
 ```
-freelancer -> platform   95.00 + 19.95 = 114.95   (self-billed)
-platform   -> freelancer  2.00 +  0.42 =   2.42   (the fee)
-                                          112.53   into the bank
+the freelancer's hours   95.00 + 19.95 = 114.95
+the platform's fee        2.00 +  0.42 =   2.42
+                                          112.53   net to the freelancer
 ```
 
 The €93.00 of spec §3 is unchanged — it is what the freelancer keeps once VAT
 settles through their return, not what arrives. Screens show both, because a
 freelancer checking a confirmation is asking the second question.
+
+**The platform does not raise any invoice.** Decided after v1: the freelancer
+and the company each invoice from their own systems. So spec §8.1's
+self-billing authorisation is no longer a clause this code depends on, there
+are no invoice numbers to allocate, and `CONFIG` holds no company details.
+
+This is a real weakening of §3's guarantee and worth stating plainly. "The
+approved number and the invoiced number are the same number **by
+construction**" becomes "…the same number **if whoever raises the invoice
+copies it correctly**". The platform still freezes the figure, versions it and
+audits it — but the last step out to a document is now manual, and nothing
+here can detect a typo in someone's accounting software. That is the trade of
+being an approval tool rather than a billing system.
 
 VAT is charged once on the line total, never per hour and multiplied. There is
 a test asserting the two agree at awkward hour counts, since that divergence

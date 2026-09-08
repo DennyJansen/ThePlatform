@@ -1,11 +1,19 @@
 # Urenplatform — v1
 
-Uren indienen, goedkeuren en factureren voor één opdracht.
-Hours entry, approval and invoicing for a single freelance assignment.
+Opdrachten plaatsen, erop reageren, uren indienen en goedkeuren.
+A marketplace for freelance assignments, plus the hours approval loop.
 
-Implements steps 1–3 of the build sequence in `v1-functional-spec.md`: the data
-model, the audit log, magic-link auth, the freelancer entry grid (F2), and the
-client approve/reject view with versioning (C1).
+Two halves sharing one data port:
+
+- **The approval loop** — steps 1–3 of `v1-functional-spec.md`: data model,
+  audit log, magic-link auth, the freelancer entry grid (F2), and the client
+  approve/reject view with versioning (C1).
+- **The marketplace** — companies post projects, freelancers apply with a
+  profile, and an application runs `submitted → screening call → hired`. Plus
+  self-service sign-up and CV import. These reverse decisions the spec made
+  deliberately; each reversal is documented where it lands.
+
+Invoicing is **not** here: the freelancer and the company each raise their own.
 
 **Live:** enable Pages first — see [Deploying](#deploying).
 
@@ -16,6 +24,13 @@ client approve/reject view with versioning (C1).
 The spec describes a system whose whole point is that *"the approved number and
 the invoiced number are the same number by construction"*. That guarantee is
 server-side by nature. GitHub Pages serves static files and nothing else.
+
+Two later decisions changed what that sentence promises. Invoices are raised by
+the freelancer and the company in **their own systems**, not by the platform —
+so the approved figure is frozen, versioned and audited here, and then copied
+out by hand. "By construction" became "if you copy it correctly". This is an
+approval tool, not a billing system. See
+[`docs/open-items.md`](docs/open-items.md) item 2b.
 
 So this build is deliberately split:
 
@@ -63,10 +78,10 @@ npx serve . ; # or: python -m http.server 5500
 
 ## Tests
 
-66 tests, run in the browser at **`/tests.html`**. They cover the fee
-arithmetic, the transition table, the compliance absences of spec §6, the
-append-only audit log, the versioning guarantee, translation parity, and the
-full submit → approve / reject loop against the mock adapter.
+169 tests, run in the browser at **`/tests.html`**. They cover the fee and VAT
+arithmetic, both state machines, the compliance absences of spec §6, the
+append-only audit log, the versioning guarantee, translation parity, sign-up
+and CV parsing, and the full loops end to end against the mock adapter.
 
 Storage is snapshotted and restored, so running them does not disturb demo
 data. CI runs the same page headless on every push.
@@ -127,6 +142,6 @@ tools/serve.ps1       local static server, Windows, no dependencies
 ## Language
 
 Dutch and English ship together; Dutch is the default and the browser's
-preference is honoured when it matches. Invoices will be Dutch regardless
-(spec §10). Every string lives in `src/i18n/`, and a test fails the build if
-the two tables drift apart.
+preference is honoured when it matches. Invoices are raised outside the
+platform, so nothing here governs their language. Every string lives in
+`src/i18n/`, and a test fails the build if the two tables drift apart.

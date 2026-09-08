@@ -125,7 +125,7 @@ export function vatCents(exVatCents, rateBp = VAT_RATE_BP) {
  * On a EUR 100/hour client budget:
  *   client is invoiced          100.00/hour   -> client_total
  *   freelancer's assignment rate 95.00/hour   -> freelancer_gross
- *   self-billed deduction         2.00/hour   -> freelancer_fee
+ *   platform fee per hour         2.00/hour   -> freelancer_fee
  *   freelancer nets              93.00/hour   -> freelancer_net
  *   platform take                 7.00/hour   -> platform_take
  *
@@ -140,20 +140,24 @@ export function computeFees(assignment, hours, vatRateBp = VAT_RATE_BP) {
   const freelancerNet = freelancerGross - freelancerFee;
   const clientSideSpread = clientTotal - freelancerGross;
 
-  // VAT. Spec §8.9 / §10 asked how the per-hour deduction is treated; the
-  // answer is that the €2 is EX VAT, which makes it a taxable supply from the
-  // platform to the freelancer rather than a discount on their rate. So VAT is
-  // charged on it, and the freelancer reclaims that VAT like any other cost.
+  // VAT. Spec §8.9 / §10 asked how the per-hour fee is treated; the answer is
+  // that every rate here is EX VAT, the €2 included. A fee with 21% added to
+  // it is a supply the freelancer buys, not a discount on their rate, so it
+  // carries VAT of its own and they reclaim it like any other cost.
   //
   // Two separate supplies, therefore two separate VAT amounts, and they are
   // NOT netted before VAT is applied:
   //
-  //   freelancer -> platform   95.00 + 19.95 VAT = 114.95   (self-billed)
-  //   platform   -> freelancer  2.00 +  0.42 VAT =   2.42   (platform's fee)
-  //   cash to the freelancer                       112.53
+  //   the freelancer's hours   95.00 + 19.95 VAT = 114.95
+  //   the platform's fee        2.00 +  0.42 VAT =   2.42
+  //   net to the freelancer                        112.53
   //
   // 93.00 is still what they keep once the VAT washes through, which is why
-  // freelancer_net is unchanged. It is not what lands in the bank.
+  // freelancer_net is unchanged. It is not the figure that moves.
+  //
+  // The platform does not raise any of these documents — the freelancer and
+  // the company each invoice in their own systems. These figures exist so that
+  // whoever raises an invoice is copying a number both sides already agreed.
   const clientTotalVat = vatCents(clientTotal, vatRateBp);
   const freelancerGrossVat = vatCents(freelancerGross, vatRateBp);
   const freelancerFeeVat = vatCents(freelancerFee, vatRateBp);

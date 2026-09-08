@@ -113,23 +113,33 @@ export const APPLICATION_ACTOR = Object.freeze({
 });
 
 /**
- * A settled month produces THREE documents, not two.
+ * INVOICING HAPPENS OUTSIDE THIS PLATFORM.
  *
- * Spec §3 listed two directions, on the assumption that the €2/hour deduction
- * was a line on the self-billed invoice. It is not: the fee is ex VAT, which
- * makes it a taxable supply from the platform to the freelancer, and a
- * self-billed invoice is the *freelancer's own sales invoice*. Putting the
- * platform's fee on it as a negative line understates their turnover.
+ * Decided after v1: the freelancer and the company each raise their own
+ * invoices in their own systems. The platform does not generate documents, does
+ * not allocate invoice numbers, and does not self-bill — which also means spec
+ * §8.1's self-billing authorisation clause is no longer a clause this code
+ * depends on.
  *
- * So the fee gets its own document, and the two are netted in payment.
+ * What the platform still does is settle the number. Hours are entered,
+ * approved, and frozen; whoever raises the invoice copies an amount that two
+ * parties already agreed on. §3's guarantee weakens from "the same number by
+ * construction" to "the same number if you copy it correctly" — which is worth
+ * knowing, because it is the difference between a billing system and an
+ * approval tool.
+ *
+ * The enum is kept because `invoiced` and `paid` remain real period statuses:
+ * §1 already put payment outside ("manual bank transfer, marked paid in
+ * admin"), and ops records against a document raised elsewhere.
+ *
+ * The two values keep the names spec §3 gave them, and that schema.sql already
+ * has. Renaming a dormant enum to match a decision that removed its only
+ * writer would be churn, and would put the model out of step with the SQL for
+ * no gain.
  */
 export const INVOICE_DIRECTION = Object.freeze({
-  /** Platform -> client. Hours at the client rate. */
   TO_CLIENT: 'to_client',
-  /** Freelancer -> platform, issued by the platform in the freelancer's name. */
   SELF_BILLED_TO_FREELANCER: 'self_billed_to_freelancer',
-  /** Platform -> freelancer. The per-hour intermediation fee. */
-  PLATFORM_FEE_TO_FREELANCER: 'platform_fee_to_freelancer',
 });
 
 /** Every action name that may appear in an AuditEvent. Spec §3. */
