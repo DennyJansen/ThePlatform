@@ -19,11 +19,17 @@ export const CONFIG = Object.freeze({
    * Flipping this is the entire migration as far as the frontend is concerned.
    * See docs/supabase-migration.md.
    */
-  // Still 'mock'. The project below exists and the schema is applied, but the
-  // adapter has not yet driven a single flow against it. Flipping this before
-  // that is done would put an unverified backend on the live site, and the
-  // live site is the only place this app can be verified.
-  backend: 'mock',
+  // Live on Postgres since 8 September 2026.
+  //
+  // What this cost: the demo is gone. There are no seeded accounts and no
+  // walkthrough data — everyone signs up, and the first person to register a
+  // KvK number owns that organisation. Reverting is one word here plus a
+  // deploy, and the mock adapter is untouched and still passes its tests, so
+  // the demo can come back at any time.
+  //
+  // What it does not change: not one line in src/ui/. That was the point of
+  // the data port.
+  backend: 'supabase',
 
   supabase: {
     url: 'https://hmvyurrdwyxvrubaesua.supabase.co',
