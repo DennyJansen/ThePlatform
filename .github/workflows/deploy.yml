@@ -6,9 +6,14 @@ name: Deploy to GitHub Pages
 #
 # Before the first run, set Settings -> Pages -> Source to "GitHub Actions".
 
+# The checks run on every branch; only main deploys. There is no way to run
+# tests.html locally on a machine without Node — the suite needs a real
+# browser and a static server — so a branch that cannot reach CI cannot be
+# verified at all, and the alternative is merging to main to find out. That is
+# the wrong order.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   workflow_dispatch:
 
 permissions:
@@ -136,6 +141,8 @@ jobs:
   deploy:
     name: Deploy
     needs: check
+    # Only main is the site. A branch push gets the checks and stops there.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
