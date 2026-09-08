@@ -302,3 +302,90 @@ can approve anyone. Ops can fix it in the table editor. It will happen.
 
 **Decided: one system.** This platform is authoritative for who is available
 and what is open. Nothing to keep in step with a spreadsheet.
+
+## Added by the Supabase adapter
+
+### The migrations now apply — RESOLVED for DDL, still open for behaviour
+
+All seven files apply cleanly to a fresh Supabase project, in this order:
+`schema.sql`, `002a-enum-values.sql`, `002`, `003`, `004`, `005`, `006`.
+
+Getting there took three fixes, all found by attempting the run rather than by
+reading, and all of them ordering:
+
+1. **002 could never have worked.** It added `'company_admin'` to the
+   `user_role` enum and used it eleven lines later. Postgres refuses to use a
+   new enum value in the transaction that added it, and the SQL editor is one
+   transaction per run. Hence `002a-enum-values.sql`, which exists solely to be
+   a separate transaction.
+2. **004 dropped a column a view depended on.** `project_board` selects
+   `projects.freelancer_rate_per_hour`; the drop came first. This one failed
+   *loudly*, because Postgres tracks view dependencies.
+3. **Three functions read columns 004 drops, and nothing said so.**
+   `hire_applicant`, `submit_period` and `approve_period`. See the entry below.
+
+**What this does and does not settle.** The DDL applies. That is worth having —
+it was the largest unknown — but it says nothing about whether the RLS policies
+admit the right readers, whether the definer functions do what their names say,
+or whether the adapter can drive any of it. The database has zero rows and
+nothing has ever called a function in it. Those are the next unknowns and they
+are not smaller than this one was; they are just better defined.
+
+**What the test suite covers.** `src/test/supabase.js` compares the adapter
+against the SQL as text: every table, view and function the adapter names must
+exist, no function's final definition may read a dropped column, no file may
+add an enum value and use it, no file may drop a column before the view over
+it, and the invariants the schema exists to hold — no write policy on
+`timesheet_periods`, no function granted to `public`, the sign-up role clamp,
+the self-approval check — are asserted. Two of those tests exist because of
+failures 1 and 3 above.
+
+### Three functions read columns 004 dropped — FOUND, FIXED IN 006
+
+004 dropped `assignments.client_rate_per_hour`,
+`assignments.freelancer_rate_per_hour` and
+`projects.freelancer_rate_per_hour`. Three functions kept reading them:
+
+- `hire_applicant` — would fail on the first hire.
+- `submit_period` — would fail on every submission.
+- `approve_period` — would fail on every approval.
+
+The last two are the v1 approval loop. The whole product, failing on first use,
+with nothing anywhere reporting a problem until someone clicked the button.
+
+**Why nothing caught it, and this is the part worth remembering.** Postgres
+tracks dependencies for views and refuses to drop a column one selects — that
+is why the `project_board` problem surfaced within seconds. It does not track
+`plpgsql` bodies at all. `DROP COLUMN` succeeded, the functions stayed valid,
+and the mismatch would have waited for a caller.
+
+So a migration that changes a column set has to grep the function bodies. There
+is no compiler for this and there is no error until runtime.
+`src/test/supabase.js` now does that grep on every push — it walks the last
+`create or replace` of each function, so it checks what the database actually
+ends up with rather than what any one file says.
+
+Repaired in `006-adapter-gaps.sql`, along with five other things writing the
+adapter turned up: `open_period` (which did not exist at all, so a month could
+not be opened), `set_outreach_consent`, `audit_for_assignment`,
+`my_applications`, `applications_for_project`, and a trigger making project
+transitions legal-or-refused rather than whatever a browser PATCHes.
+
+**The pattern behind five of those six.** The v1 policies were written for the
+timesheet flows, where every reader is a party to the assignment. The
+marketplace reads across that boundary: a company reading an applicant's name,
+a freelancer reading the title of a project they have no policy on. RLS cannot
+express "you may read this row because of a relationship elsewhere", so those
+reads go through narrow security-definer functions instead. Each takes the
+smallest argument that identifies the relationship and returns only what the
+screen needs — a general one would defeat the design it is patching.
+
+### What running it will cost — an estimate, not a promise
+
+Expect a session of failures on first apply: statement ordering, enum values
+added and used in the same transaction (Postgres refuses that), a cast or two.
+Boring, individually obvious, and not knowable in advance from here.
+
+Keep the fixes in the migration files rather than in the SQL editor. A database
+repaired by hand is a database the next environment cannot reproduce, and the
+whole reason these are files is that there will be a next environment.

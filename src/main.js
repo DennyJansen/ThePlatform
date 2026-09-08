@@ -233,7 +233,10 @@ boot();
 // Surfacing a failed render is better than a blank page with a console nobody
 // is looking at. This is the last resort, not error handling.
 window.addEventListener('unhandledrejection', (event) => {
-  if (!CONFIG || CONFIG.backend !== 'mock') return;
+  // Was gated to the mock backend. That had it backwards: the demo is the one
+  // place where nothing can really go wrong. A console line costs a user
+  // nothing and is the only signal anybody gets when a policy refuses a call
+  // the UI assumed would work.
   // eslint-disable-next-line no-console
   console.error('Unhandled rejection:', event.reason);
 });

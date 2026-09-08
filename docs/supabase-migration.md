@@ -12,15 +12,54 @@ the adapter methods, flip one flag in `src/config.js`.
 
 1. Create a Supabase project in an EU region — the data is Dutch personal and
    financial data and there is no reason for it to leave the EU.
-2. Run `src/data/supabase/schema.sql` in the SQL editor, once, whole.
-   Then `002-marketplace.sql` (projects, applications, profiles, the
-   `project_board` view), `003-signup.sql` (self-service sign-up) and
-   `004-agreed-rate.sql` (one agreed rate, two fees) and
-   `005-membership-and-kvk.sql` (organisation membership, KvK on both sides).
+2. Run the migrations in the SQL editor, **one query at a time, in this order,
+   each one whole**:
+
+   | # | File | What it does |
+   |---|---|---|
+   | 1 | `schema.sql` | tables, constraints, RLS, the three period transitions |
+   | 2 | `002a-enum-values.sql` | two enum values, alone — see below |
+   | 3 | `002-marketplace.sql` | projects, applications, profiles, `project_board` |
+   | 4 | `003-signup.sql` | self-service sign-up |
+   | 5 | `004-agreed-rate.sql` | one agreed rate, two fees |
+   | 6 | `005-membership-and-kvk.sql` | organisation membership, KvK on both sides |
+   | 7 | `006-adapter-gaps.sql` | what writing the adapter turned up |
+
+   **002a has to be its own run.** Postgres will not let you *use* a new enum
+   value in the same transaction that added it, and the SQL editor runs each
+   query as one transaction. Pasting 002a and 002 together fails with
+   `unsafe use of new value "company_admin" of enum type user_role`, and so
+   does pasting all of them into one query. Separate runs are separate
+   transactions; that is the whole fix.
+
+   A failed run rolls back completely, so there is no half-applied state to
+   clean up — fix the file and paste it again.
 
    Read the warning at the top of 003 before running it: sign-up metadata
    comes from the browser, and the role clamp in that trigger is what stops
    someone signing themselves up as ops.
+
+   **006 is not optional and it is not cleanup.** It repairs `hire_applicant`,
+   `submit_period` and `approve_period`, all three of which read columns 004
+   drops. Stopping at 005 gives you a database where submitting a timesheet
+   fails with `record "asg" has no field "client_rate_per_hour"` — that is the
+   entire v1 loop. Nothing warns you: a `plpgsql` body is not checked until it
+   runs.
+
+### This sequence has been run
+
+All seven files applied cleanly to a fresh EU project. It took three fixes to
+get there, all of them ordering, and all three are now in the files:
+
+- 002 added an enum value and used it in the same transaction → split into
+  `002a`.
+- 004 dropped `projects.freelancer_rate_per_hour` before dropping the view
+  that selects it → the view now comes down first and goes back up last.
+- Three functions read columns 004 drops → repaired in 006.
+
+If a run does fail, keep the fix in the migration file rather than in the SQL
+editor. A database repaired by hand is one the next environment cannot
+reproduce, which is the entire reason these are files.
 
 The file creates the tables, the constraints that encode the spec's rules, the
 row-level security policies, and three security-definer functions —
@@ -64,43 +103,59 @@ There is no ops UI in v1, by design (spec §1). Use the table editor:
    derived. The `rates_coherent` constraint refuses an incoherent set.
 4. Leave `auto_approve_enabled` false (spec §7).
 
-## 3. Implement the adapter
+## 3. The adapter
 
-`src/data/supabase/supabaseAdapter.js` is a skeleton whose every method
-currently rejects with `error.backend_not_implemented`. The file header lists
-the mapping. In short:
-
-| Port method | Implementation |
-|---|---|
-| `requestMagicLink` | `auth.signInWithOtp({ email })` → return `{ delivery: 'email' }` and **no token** |
-| `consumeMagicLink` | not called — Supabase handles the redirect; `getSession` picks it up |
-| `getSession` / `signOut` | `auth.getSession()` / `auth.signOut()` |
-| `listAssignments` / `getAssignment` | plain selects; RLS does the scoping |
-| `openPeriod` / `getPeriod` / `listPeriods` | selects, joined into the same `PeriodView` shape the mock returns |
-| `listAwaitingDecision` | select where `status = 'submitted'` |
-| `saveDraft` | delete + insert on `time_entries` in one transaction |
-| `submitPeriod` / `approvePeriod` / `rejectPeriod` | `rpc('submit_period', …)` etc. |
-| `listAuditEvents` | plain select |
-
-Two things to get right:
-
-- **Return the same `PeriodView` shape.** The screens depend on it. The
-  `summary` field must be built with `buildSubmissionSummary` from
-  `src/domain/rules.js`, not recomputed, so the frontend and the SQL agree by
-  construction rather than by coincidence.
-- **Map Postgres errors to domain codes.** The SQL functions raise
-  `error.not_authorised`, `error.illegal_transition`, `error.no_hours`,
-  `error.comment_required`. Those strings are already the `ERROR` codes in
-  `rules.js`, so the mapping is: read `err.message`, and if it starts with
-  `error.`, wrap it in a `DomainError` with that code. The UI then translates it
-  with no further work.
-
-The client loads from a pinned CDN build — there is no bundler:
+`src/data/supabase/supabaseAdapter.js` is written. All 35 port methods, against
+a pinned CDN build of supabase-js — there is no bundler:
 
 ```js
 const { createClient } = await import(
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
 ```
+
+It has never talked to a database. Read it as a first draft that has been
+checked for internal consistency and nothing else.
+
+The shape, if you are changing it:
+
+| Port method | Implementation |
+|---|---|
+| `requestMagicLink` | `auth.signInWithOtp`, `shouldCreateUser: false` → `{ delivery: 'email' }` and **no token** |
+| `consumeMagicLink` | not called — Supabase consumes the redirect before the app boots |
+| `signUpFreelancer` / `signUpCompany` | `signInWithOtp` with `shouldCreateUser: true` and metadata the trigger reads |
+| `getSession` / `signOut` | `auth.getSession()` / `auth.signOut()` |
+| `listAssignments` / `getAssignment` | plain selects; RLS does the scoping |
+| `openPeriod` | `rpc('open_period', …)` — there is no insert policy, by design |
+| `getPeriod` / `listPeriods` | selects, joined into the `PeriodView` the mock returns |
+| `saveDraft` | delete + insert on `time_entries`; the one direct browser write |
+| `submitPeriod` / `approvePeriod` / `rejectPeriod` | `rpc(…)` into the definer functions |
+| `listAuditEvents` | `rpc('audit_for_assignment')` — a join cannot read the other party's name |
+| `listMyApplications` / `listApplicationsForProject` | `rpc(…)`, same reason |
+| `setOutreachConsent` | `rpc('set_outreach_consent')` — no update policy on `app_users` |
+
+Three things to keep right if you touch it:
+
+- **Return the same shapes the mock does.** The screens depend on them. The
+  `summary` field is built with `buildSubmissionSummary` from
+  `src/domain/rules.js`, not recomputed, so the frontend and the SQL agree by
+  construction rather than by coincidence. Totals go through `clientRate` for
+  the same reason.
+- **Map Postgres errors to domain codes.** The SQL functions raise
+  `error.not_authorised`, `error.illegal_transition`, `error.no_hours`,
+  `error.comment_required`. Those strings are already the `ERROR` codes in
+  `rules.js`, so the mapping is: read `err.message`, and if it contains an
+  `error.` code, wrap it in a `DomainError`. The UI translates it with no
+  further work.
+- **Never set a status directly.** One exception exists — project transitions,
+  because `company_writes_own_projects` is a `for all` policy — and 006 adds a
+  trigger so the database still decides which moves are legal. A test asserts
+  there is exactly one such write in the file.
+
+`src/test/supabase.js` checks that the adapter and the migrations agree about
+what exists: every table, view and function named in the adapter is looked for
+in the SQL. It cannot tell you whether a policy allows a read or whether a
+function body compiles — only a real database can — but it catches the class of
+mistake where the two files drift a week apart.
 
 ## 4. Flip the flag
 
