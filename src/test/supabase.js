@@ -33,6 +33,7 @@ const MIGRATIONS = [
   '004-agreed-rate.sql',
   '005-membership-and-kvk.sql',
   '006-adapter-gaps.sql',
+  '007-revoke-anon.sql',
 ];
 
 const BASE = new URL('../data/supabase/', import.meta.url);
@@ -210,6 +211,39 @@ describe('Supabase adapter — agrees with the migrations', () => {
 });
 
 describe('Supabase migrations — the invariants they exist to hold', () => {
+  it('revokes from anon everything it grants to authenticated', async () => {
+    // `revoke ... from public` is not a security statement on Supabase.
+    // Default privileges grant `anon` its own rights on every new table, view
+    // and function in the public schema, and revoking from PUBLIC leaves
+    // those untouched. Every earlier migration in this directory made that
+    // mistake, and project_board — a security_invoker=off view, so an RLS
+    // bypass by design — was readable by the internet as a result.
+    //
+    // Nothing static could have caught it: the SQL says `revoke`, and it is
+    // Postgres's grant model rather than the text that makes it insufficient.
+    // It took querying the running database. What this test can do is make
+    // sure a NEW grant does not repeat it.
+    const db = await loadSql();
+    const code = stripComments(db.text);
+
+    const granted = namesIn(code, /grant execute on function (\w+)/g);
+    const revoked = namesIn(code, /revoke all on function (\w+)[^;]*from anon/g);
+
+    const missing = [...granted].filter((name) => !revoked.has(name));
+    assert.deepEqual(missing, [],
+      'granted to authenticated but never revoked from anon');
+  });
+
+  it('keeps the RLS-bypassing view away from anon', async () => {
+    // project_board runs as its owner and does not apply the policies on
+    // `projects`. That is the point of it, and it is exactly why anon must
+    // not hold a grant: the anon key ships in a public repository.
+    const db = await loadSql();
+    const code = stripComments(db.text);
+    assert.ok(/revoke all on project_board from anon/.test(code),
+      'project_board must be revoked from anon by name, not from public');
+  });
+
   it('grants no function to public, only to authenticated', async () => {
     const db = await loadSql();
     const granted = namesIn(db.text, /grant execute on function ([\w]+)/g);

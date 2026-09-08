@@ -19,11 +19,19 @@ export const CONFIG = Object.freeze({
    * Flipping this is the entire migration as far as the frontend is concerned.
    * See docs/supabase-migration.md.
    */
+  // Still 'mock'. The project below exists and the schema is applied, but the
+  // adapter has not yet driven a single flow against it. Flipping this before
+  // that is done would put an unverified backend on the live site, and the
+  // live site is the only place this app can be verified.
   backend: 'mock',
 
   supabase: {
-    url: '',
-    anonKey: '',
+    url: 'https://hmvyurrdwyxvrubaesua.supabase.co',
+    // The anon key. Public by design — it is a claim about which project you
+    // are talking to, not a permission. Everything it can reach is decided by
+    // RLS and by the grants in 007. A service-role key would be a different
+    // matter entirely and must never appear here; CI refuses the deploy.
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhtdnl1cnJkd3l4dnJ1YmFlc3VhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NzE3MTgsImV4cCI6MjEwNDQ0NzcxOH0.N4SBlqsWvdGJ7Gz297-BpchI1qgxx2_lYm4m9-Bmvg8',
   },
 
   /** Default UI language. Spec section 10 leaves this open; Dutch is the
@@ -41,6 +49,6 @@ export const CONFIG = Object.freeze({
    * bespoke internal console in v1; under Supabase this is the project's table
    * editor. Empty means the link is hidden.
    */
-  adminUrl: '',
+  adminUrl: 'https://supabase.com/dashboard/project/hmvyurrdwyxvrubaesua/editor',
 
 });
