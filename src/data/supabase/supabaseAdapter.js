@@ -281,17 +281,52 @@ export async function createSupabaseAdapter(settings) {
      * branches on that and shows "check your email" without a link.
      *
      * `shouldCreateUser: false` so signing in cannot silently create an
-     * account. Supabase's error for an unknown address is swallowed on
-     * purpose: telling a public form whether an address is registered is the
-     * enumeration oracle the mock adapter is careful to avoid, and it would be
-     * strange to be careful there and careless here.
+     * account.
+     *
+     * ON SWALLOWING ERRORS, WHICH THIS USED TO DO ENTIRELY, AND WHY IT WAS
+     * THE WRONG CALL.
+     *
+     * The first version ignored every error from signInWithOtp, reasoning that
+     * telling a public form whether an address is registered is the
+     * enumeration oracle the mock adapter is careful to avoid. That reasoning
+     * is sound for the mock, where this code IS the API. It does not survive
+     * contact with Supabase, because the auth endpoint is public and answers
+     * the question itself:
+     *
+     *   unknown address  -> 422 {"error_code":"otp_disabled"}
+     *   known address    -> 200
+     *
+     * Anyone can curl that. Staying quiet in the UI hid nothing from an
+     * attacker and hid everything from the person actually trying to sign in:
+     * a rate limit, a bounced mail, a mail service falling over all produced a
+     * cheerful "check your email" for a message that was never sent. That is
+     * the failure it caused in practice, on the second sign-in ever attempted.
+     *
+     * So: a failure to SEND is now surfaced, and a failure that would reveal
+     * whether the account exists is still swallowed. 422 and 400 stay quiet —
+     * they are the "no such user" shape. 429 and 5xx are reported, because
+     * they say something about the mail path rather than about the address,
+     * and because a user who is being rate-limited needs to know that waiting
+     * is the answer.
      */
     async requestMagicLink(email) {
       const address = String(email || '').trim().toLowerCase();
-      await sb.auth.signInWithOtp({
+      const { error } = await sb.auth.signInWithOtp({
         email: address,
         options: { shouldCreateUser: false, emailRedirectTo: redirectTo() },
       });
+
+      if (error) {
+        const status = error.status || 0;
+        if (status === 429) {
+          throw new DomainError(ERROR.LINK_RATE_LIMITED, error.message);
+        }
+        if (status >= 500) {
+          throw new DomainError(ERROR.LINK_SEND_FAILED, error.message);
+        }
+        // 400 / 422: "no account for this address". Left silent — this is the
+        // one case where saying nothing is worth more than being helpful.
+      }
       return { delivery: 'email', email: address, token: null, expires_at: null };
     },
 

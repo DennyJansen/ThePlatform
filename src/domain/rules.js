@@ -62,6 +62,10 @@ export const ERROR = Object.freeze({
   LINK_EXPIRED: 'error.link_expired',
   LINK_ALREADY_USED: 'error.link_already_used',
   UNKNOWN_EMAIL: 'error.unknown_email',
+  // The link could not be sent. Distinct from "no such account" on purpose —
+  // see the note on requestMagicLink in the Supabase adapter.
+  LINK_RATE_LIMITED: 'error.link_rate_limited',
+  LINK_SEND_FAILED: 'error.link_send_failed',
 });
 
 /* ------------------------------------------------------------------ *

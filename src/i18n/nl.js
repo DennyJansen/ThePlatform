@@ -190,6 +190,8 @@ export default {
   'error.link_expired': 'Deze inloglink is verlopen. Vraag een nieuwe aan.',
   'error.link_already_used': 'Deze inloglink is al gebruikt. Vraag een nieuwe aan.',
   'error.unknown_email': 'Geen account op dit adres. Accounts worden door het platform aangemaakt.',
+  'error.link_rate_limited': 'Te veel inloglinks aangevraagd. Wacht een paar minuten en probeer het opnieuw.',
+  'error.link_send_failed': 'De inloglink kon niet verstuurd worden. Kijk in je spam; staat hij daar niet, dan hapert de mailservice.',
   'error.backend_not_implemented': 'Deze backend is nog niet aangesloten.',
   'error.unknown': 'Er ging iets mis.',
 

@@ -188,6 +188,8 @@ export default {
   'error.link_expired': 'That sign-in link has expired. Request a new one.',
   'error.link_already_used': 'That sign-in link has already been used. Request a new one.',
   'error.unknown_email': 'No account for that address. Accounts are created by the platform.',
+  'error.link_rate_limited': 'Too many sign-in links requested. Wait a few minutes and try again.',
+  'error.link_send_failed': 'The sign-in link could not be sent. Check your spam folder; if it is not there, the mail service is failing.',
   'error.backend_not_implemented': 'This backend is not connected yet.',
   'error.unknown': 'Something went wrong.',
 
