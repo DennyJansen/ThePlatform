@@ -399,6 +399,15 @@ export async function createSupabaseAdapter(settings) {
     /* ---------------- Assignments ---------------- */
 
     async listAssignments() {
+      // Signed out is a refusal, not an empty list.
+      //
+      // Without this, RLS returns [] and the screen renders "no assignments"
+      // where the mock would have bounced the caller to sign-in. Every reader
+      // below starts the same way for the same reason: the two backends have
+      // to agree about what being signed out looks like, and RLS on its own
+      // cannot tell "you may see nothing" apart from "there is nothing".
+      await requireMe();
+
       // RLS scopes this to assignments the caller is a party to, so there is
       // no role filter here — and there should not be one. A filter in the
       // client would look like the security boundary without being it.
@@ -433,6 +442,7 @@ export async function createSupabaseAdapter(settings) {
     },
 
     async getAssignment(id) {
+      await requireMe();
       const assignment = unwrap(await sb.from('assignments')
         .select(ASSIGNMENT_COLUMNS).eq('id', id).single());
 
@@ -476,6 +486,7 @@ export async function createSupabaseAdapter(settings) {
      * showing the version that counts, with earlier versions summarised.
      */
     async listPeriods(assignmentId) {
+      await requireMe();
       const assignment = unwrap(await sb.from('assignments')
         .select('agreed_rate_per_hour, client_fee_per_hour')
         .eq('id', assignmentId).single());
@@ -520,6 +531,7 @@ export async function createSupabaseAdapter(settings) {
     },
 
     async listAwaitingDecision() {
+      await requireMe();
       // read_own_periods already limits this to assignments the caller
       // approves for, so "submitted" is the whole filter.
       const rows = unwrap(await sb.from('timesheet_periods')
@@ -653,6 +665,7 @@ export async function createSupabaseAdapter(settings) {
 
     /** Every project belonging to the caller's organisation, any status. */
     async listCompanyProjects() {
+      await requireMe();
       const rows = unwrap(await sb.from('projects')
         .select('*').order('created_at', { ascending: false })) || [];
 
@@ -781,6 +794,7 @@ export async function createSupabaseAdapter(settings) {
      * live. Do not add a fallback that fetches it another way.
      */
     async listApplicationsForProject(projectId) {
+      await requireMe();
       const project = unwrap(await sb.from('projects')
         .select('*').eq('id', projectId).single(), MARKET_ERROR.NOT_AUTHORISED);
 

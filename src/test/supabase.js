@@ -152,6 +152,31 @@ describe('Supabase adapter — shape', () => {
     assert.deepEqual(missing, [], 'not implemented in the Supabase adapter');
   });
 
+  it('checks for a session in every read, rather than trusting RLS to refuse', async () => {
+    // RLS cannot distinguish "you may see nothing" from "there is nothing".
+    // A signed-out caller gets [] from a policy-filtered select, so a screen
+    // renders an empty list where the mock would have thrown not_authorised
+    // and bounced them to sign-in.
+    //
+    // Caught by driving the real adapter against the real database:
+    // listAssignments resolved to [] while every other method refused. The
+    // fix is a requireMe() at the top of each reader — cheap, and it makes
+    // the two backends agree about what being signed out looks like.
+    const text = await loadSource();
+    const readers = [
+      'listAssignments', 'getAssignment', 'listPeriods', 'listAwaitingDecision',
+      'listOpenProjects', 'getProject', 'listCompanyProjects',
+      'listApplicationsForProject', 'getMyProfile', 'listPendingMembers',
+    ];
+    const missing = readers.filter((name) => {
+      const start = text.indexOf('async ' + name + '(');
+      if (start === -1) return true;
+      // Look only at the head of the method, before it starts querying.
+      return !/requireMe\(\)/.test(text.slice(start, start + 700));
+    });
+    assert.deepEqual(missing, [], 'reader does not establish a session first');
+  });
+
   it('never sets a status directly — transitions go through the database', async () => {
     const text = await loadSource();
     // `.update({ status: ... })` is allowed in exactly one place: project
