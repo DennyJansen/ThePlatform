@@ -214,12 +214,48 @@ export async function createSupabaseAdapter(settings) {
   await sb.auth.getSession();
   stripAuthFragment();
 
+  /**
+   * Take the sign-in credentials back out of the address bar.
+   *
+   * Two places, because Supabase uses both and the first version only knew
+   * about one:
+   *
+   *   implicit flow -> #access_token=...
+   *   PKCE flow     -> ?code=...        <- this build, and it was being kept
+   *
+   * The original cleared the hash and then carefully preserved
+   * window.location.search, which is exactly where PKCE puts the code. It sat
+   * in the address bar, in history, and in anything anybody pasted — which is
+   * how it was found: a URL pasted into a chat, still carrying its code.
+   *
+   * The code is single-use and already spent by the time this runs, so this
+   * is hygiene rather than a live hole. But a URL that looks ordinary and
+   * carries a credential is the kind of thing that gets shared in a support
+   * thread, and the next person to widen `flowType` or add a recovery flow
+   * should not have to rediscover that.
+   */
   function stripAuthFragment() {
-    const hash = window.location.hash || '';
-    if (/access_token=|error_description=|type=(magiclink|recovery|signup)/.test(hash)) {
-      window.history.replaceState(
-        null, '', window.location.pathname + window.location.search + '#/',
-      );
+    const url = new URL(window.location.href);
+    const AUTH_PARAMS = ['code', 'error', 'error_code', 'error_description', 'token_hash', 'type'];
+
+    let dirty = false;
+    for (const name of AUTH_PARAMS) {
+      if (url.searchParams.has(name)) {
+        url.searchParams.delete(name);
+        dirty = true;
+      }
+    }
+
+    const hash = url.hash || '';
+    if (/access_token=|refresh_token=|error_description=|type=(magiclink|recovery|signup)/.test(hash)) {
+      url.hash = '#/';
+      dirty = true;
+    }
+
+    if (dirty) {
+      // Keep whatever route the link was aiming at, if it survived.
+      const route = url.hash && url.hash !== '#/' ? url.hash : '#/';
+      window.history.replaceState(null, '', url.pathname + url.search + route);
     }
   }
 
