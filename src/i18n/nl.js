@@ -191,7 +191,7 @@ export default {
   'error.link_already_used': 'Deze inloglink is al gebruikt. Vraag een nieuwe aan.',
   'error.unknown_email': 'Geen account op dit adres. Accounts worden door het platform aangemaakt.',
   'error.link_rate_limited': 'Te veel inloglinks aangevraagd. Wacht een paar minuten en probeer het opnieuw.',
-  'error.link_send_failed': 'De inloglink kon niet verstuurd worden. Kijk in je spam; staat hij daar niet, dan hapert de mailservice.',
+  'error.link_send_failed': 'De inloglink kon niet verstuurd worden — er is dus niets aangekomen. Probeer het zo nog eens; blijft het misgaan, laat het ons weten.',
   'error.signup_failed': 'Aanmelden is niet gelukt. Er is niets aangemaakt, dus je kunt het opnieuw proberen.',
   'error.backend_not_implemented': 'Deze backend is nog niet aangesloten.',
   'error.unknown': 'Er ging iets mis.',

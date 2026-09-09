@@ -189,7 +189,7 @@ export default {
   'error.link_already_used': 'That sign-in link has already been used. Request a new one.',
   'error.unknown_email': 'No account for that address. Accounts are created by the platform.',
   'error.link_rate_limited': 'Too many sign-in links requested. Wait a few minutes and try again.',
-  'error.link_send_failed': 'The sign-in link could not be sent. Check your spam folder; if it is not there, the mail service is failing.',
+  'error.link_send_failed': 'The sign-in link could not be sent, so nothing has arrived. Try again shortly; if it keeps failing, let us know.',
   'error.signup_failed': 'Sign-up did not go through. Nothing was created, so you can try again.',
   'error.backend_not_implemented': 'This backend is not connected yet.',
   'error.unknown': 'Something went wrong.',
