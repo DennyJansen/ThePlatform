@@ -7,7 +7,7 @@
  */
 
 export default {
-  'app.name': 'Timesheet platform',
+  'app.name': 'ThePlatform',
   'app.skip_to_content': 'Skip to content',
 
   'common.loading': 'Loading…',

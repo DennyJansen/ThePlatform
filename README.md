@@ -1,4 +1,4 @@
-# Urenplatform — v1
+# ThePlatform — v1
 
 Opdrachten plaatsen, erop reageren, uren indienen en goedkeuren.
 A marketplace for freelance assignments, plus the hours approval loop.

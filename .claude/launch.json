@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "urenplatform",
+      "name": "theplatform",
       "runtimeExecutable": "powershell",
       "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "tools/serve.ps1", "-Port", "5510"],
       "port": 5510

@@ -9,7 +9,7 @@
  */
 
 export default {
-  'app.name': 'Urenplatform',
+  'app.name': 'ThePlatform',
   'app.skip_to_content': 'Naar de inhoud',
 
   'common.loading': 'Bezig met laden…',
